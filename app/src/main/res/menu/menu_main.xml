@@ -1,0 +1,15 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context="com.meshcentral.agent.MainActivity" >
+    <item
+        android:id="@+id/action_setup_server"
+        android:orderInCategory="100"
+        android:title="@string/setup_server"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_clear_server"
+        android:orderInCategory="100"
+        android:title="@string/clear_server"
+        app:showAsAction="never" />
+</menu>

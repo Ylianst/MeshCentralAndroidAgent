@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">MeshCentral Agent</string>
+    <string name="action_settings">Settings</string>
+    <!-- Strings used for fragments for navigation -->
+    <string name="first_fragment_label">First Fragment</string>
+    <string name="second_fragment_label">Second Fragment</string>
+    <string name="setup_server">Setup Server</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="clear_server">Clear Server</string>
+    <string name="no_server_setup">No Server Setup</string>
+    <string name="invalid_qrcode">Invalid QR code</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="connecting">Connecting</string>
+    <string name="connected">Connected</string>
+    <string name="authenticating">Authenticating</string>
+
+    <string name="hello_first_fragment">Hello first fragment</string>
+    <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
+</resources>
