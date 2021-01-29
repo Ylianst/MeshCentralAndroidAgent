@@ -119,7 +119,10 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         if (serverLink == null) return null
         var x : List<String> = serverLink.split(',')
         var serverHost = x[0]
-        return serverHost.substring(5)
+        serverHost = serverHost.substring(5) // Remove the mc://
+        var i = serverHost.indexOf(':')
+        if (i > 0) { serverHost = serverHost.substring(0, i) } // Remove the port number if present
+        return serverHost
     }
 
     override fun onPermissionsChecked(report: MultiplePermissionsReport?) {
