@@ -1,10 +1,13 @@
 package com.meshcentral.agent
 
+import android.content.Context
 import android.content.Context.BATTERY_SERVICE
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.BatteryManager
-import android.os.CountDownTimer
+import android.content.pm.PackageManager
+import android.hardware.camera2.CameraAccessException
+import android.hardware.camera2.CameraManager
+import android.os.*
 import android.provider.Settings
 import android.util.Base64
 import androidx.core.content.ContextCompat.getSystemService
@@ -28,6 +31,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.collections.ArrayList
+import kotlin.concurrent.thread
 import kotlin.random.Random
 
 class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId: String) : WebSocketListener() {
@@ -173,20 +177,20 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
                     // Hash the server cert hash, server nonce and client nonce and sign the result
                     val sig = Signature.getInstance("SHA384withRSA")
-                    sig.initSign(parent.agentCertificateKey)
+                    sig.initSign(agentCertificateKey)
                     sig.update(msg.substring(2).toByteArray().plus(nonce!!))
                     val signature = sig.sign()
 
                     // Construct the response [2, sideOfCert, Cert, Signature]
                     var header = ByteArray(2)
                     header[1] = 2
-                    var certLen = parent.agentCertificate!!.encoded.size
+                    var certLen = agentCertificate!!.encoded.size
                     var agentCertLenBytes = ByteArray(2)
                     agentCertLenBytes[0] = (certLen shr 8).toByte()
                     agentCertLenBytes[1] = (certLen and 0xFF).toByte()
 
                     // Send the response
-                    webSocket.send(header.plus(agentCertLenBytes).plus(parent.agentCertificate!!.encoded).plus(signature).toByteString())
+                    webSocket.send(header.plus(agentCertLenBytes).plus(agentCertificate!!.encoded).plus(signature).toByteString())
                 }
                 2 -> {
                     // Server agent certificate
@@ -336,7 +340,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     var msgtype = json.getString("type")
                     when (msgtype) {
                         "console" -> {
-                            processConsoleMessage(json.getString("value"), json.getString("sessionid"))
+                            processConsoleMessage(json.getString("value"), json.getString("sessionid"), json)
                         }
                         "tunnel" -> {
                             /*
@@ -519,27 +523,47 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         return r.toList()
     }
 
-    private fun processConsoleMessage(cmdLine:String, sessionid:String) {
+    private fun processConsoleMessage(cmdLine:String, sessionid:String, jsoncmd:JSONObject) {
         //println("Console: $cmdLine")
 
         // Parse the incoming console command
         var splitCmd = parseArgString(cmdLine)
         var cmd = splitCmd[0]
         var r : String? = null
+        if (cmd == "") return
+
+        // Log the incoming console command to the server
+        var eventArgs = JSONArray()
+        eventArgs.put(cmdLine)
+        logServerEventEx(17, eventArgs, "Processing console command: $cmdLine", jsoncmd);
 
         when (cmd) {
             "help" -> {
                 // Return the list of available console commands
-                r = "Available commands: alert, battery, help, netinfo, sysinfo, toast"
+                r = "Available commands: alert, battery, flash, netinfo, openurl, serverlog, sysinfo, toast, uiclose, uistate, vibrate"
             }
             "alert" -> {
                 // Display alert message
                 if (splitCmd.size < 2) {
                     r = "Usage:\r\n  alert \"Message\" \"Title\"";
                 } else if (splitCmd.size == 2) {
+                    // Event to the server
+                    var eventArgs = JSONArray()
+                    eventArgs.put("Alert")
+                    eventArgs.put(splitCmd[1])
+                    logServerEventEx(18, eventArgs, "Displaying message box, title=" + splitCmd[2] + ", message=" + splitCmd[1], jsoncmd);
+
+                    // Show the alert
                     parent.showAlertMessage("Alert", splitCmd[1])
                     r = "Ok";
                 } else if (splitCmd.size > 2) {
+                    // Event to the server
+                    var eventArgs = JSONArray()
+                    eventArgs.put(splitCmd[2])
+                    eventArgs.put(splitCmd[1])
+                    logServerEventEx(18, eventArgs, "Displaying message box, title=" + splitCmd[2] + ", message=" + splitCmd[1], jsoncmd);
+
+                    // Show the alert
                     parent.showAlertMessage(splitCmd[2], splitCmd[1])
                     r = "Ok";
                 }
@@ -550,6 +574,12 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     r = "Usage:\r\n  toast \"Message\"";
                 } else if (splitCmd.size >= 2) {
                     parent.showToastMessage(splitCmd[1])
+
+                    // Event to the server
+                    var eventArgs = JSONArray()
+                    eventArgs.put("None")
+                    eventArgs.put(splitCmd[1])
+                    logServerEventEx(26, eventArgs, "Displaying toast message, title=None, message=${splitCmd[1]}", jsoncmd);
                     r = "Ok";
                 }
             }
@@ -565,6 +595,121 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 // Battery info
                 var battState : JSONObject? = getSysBatteryInfo();
                 if (battState == null) { r = "No battery" } else { r = battState.toString(2) }
+            }
+            "openurl" -> {
+                // Open a URL
+                if (splitCmd.size < 2) {
+                    r = "Usage:\r\n  openurl \"url\"";
+                } else if (splitCmd.size >= 2) {
+                    if (splitCmd[1].startsWith("https://") || splitCmd[1].startsWith("http://")) {
+                        if (visibleScreen == 2) {
+                            r = "Device is busy in QR code scanner"
+                        } else {
+                            // Open the URL
+                            if (parent.openUrl(splitCmd[1])) {
+                                r = "Ok";
+
+                                // Event to the server
+                                var eventArgs = JSONArray()
+                                eventArgs.put(splitCmd[1])
+                                logServerEventEx(20, eventArgs, "Opening: ${splitCmd[1]}", jsoncmd);
+                            } else {
+                                r = "Busy";
+                            }
+                        }
+                    } else {
+                        r = "Url must start with http:// or https://"
+                    }
+                }
+            }
+            "uiclose" -> {
+                if (visibleScreen == 1) {
+                    r = "Application is at main screen"
+                } else {
+                    parent.returnToMainScreen()
+                    r = "ok"
+                }
+            }
+            "uistate" -> {
+                if (visibleScreen == 1) {
+                    r = "Application is at main screen"
+                } else if (visibleScreen == 2) {
+                    r = "Application is at QR code scanner screen"
+                } else if (visibleScreen == 3) {
+                    r = "Application is at browser screen: ${pageUrl}"
+                } else {
+                    r = "Application is in unknown screen ${visibleScreen}"
+                }
+            }
+            "serverlog" -> {
+                // Log an event to the server
+                if (splitCmd.size < 2) {
+                    r = "Usage:\r\n  serverlog \"event\"";
+                } else if (splitCmd.size >= 2) {
+                    logServerEvent(splitCmd[1], jsoncmd)
+                    r = "ok"
+                }
+            }
+            "vibrate" -> {
+                // Vibrate the device
+                if (splitCmd.size < 2) {
+                    r = "Usage:\r\n  vibrate [milliseconds]";
+                } else if (splitCmd.size >= 2) {
+                    var t : Long = 0
+                    try { t = splitCmd[1].toLong() } catch (e : Exception) {}
+                    if ((t > 0) && (t <= 10000)) {
+                        val v = parent.getApplicationContext()
+                            .getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                        if (v == null) {
+                            r = "Not supported"
+                        } else {
+                            // Vibrate for 500 milliseconds
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                v.vibrate(
+                                    VibrationEffect.createOneShot(
+                                        t,
+                                        VibrationEffect.DEFAULT_AMPLITUDE
+                                    )
+                                )
+                            } else {
+                                v.vibrate(t)
+                            }
+                            r = "ok"
+                        }
+                    } else {
+                        r = "Value must be between 1 and 10000"
+                    }
+                }
+            }
+            "flash" -> {
+                if (splitCmd.size < 2) {
+                    r = "Usage:\r\n  flash [milliseconds]";
+                } else if (splitCmd.size >= 2) {
+                    var isFlashAvailable = parent.getApplicationContext().getPackageManager()
+                        .hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT);
+                    if (!isFlashAvailable) {
+                        r = "Flash not available"
+                    } else {
+                        var t : Long = 0
+                        try { t = splitCmd[1].toLong() } catch (e : Exception) {}
+                        if ((t > 0) && (t <= 10000)) {
+                            var mCameraManager = parent.getApplicationContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                            try {
+                                var mCameraId = mCameraManager.getCameraIdList()[0];
+                                mCameraManager.setTorchMode(mCameraId, true);
+                                thread {
+                                    Thread.sleep(t)
+                                    mCameraManager.setTorchMode(mCameraId, false);
+                                }
+                                r = "ok"
+                            } catch (e: CameraAccessException) {
+                                r = "Flash error"
+                            }
+                        } else {
+                            r = "Value must be between 1 and 10000"
+                        }
+                    }
+                }
             }
             else -> {
                 // Unknown console command
@@ -592,6 +737,44 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             result[i.shr(1)] = HEX_CHARS.indexOf(hex[i]).shl(4).or(HEX_CHARS.indexOf(hex[i + 1])).toByte()
         }
         return result
+    }
+
+    fun logServerEvent(msg:String, jsoncmd:JSONObject?) {
+        val json = JSONObject()
+        json.put("action", "log")
+        json.put("msg", msg)
+        if (jsoncmd != null) {
+            if (!jsoncmd.isNull("userid")) { json.put("userid", jsoncmd.optString("userid")) }
+            if (!jsoncmd.isNull("username")) { json.put("username", jsoncmd.optString("username")) }
+            if (!jsoncmd.isNull("sessionid")) { json.put("sessionid", jsoncmd.optString("sessionid")) }
+            if (!jsoncmd.isNull("remoteaddr")) { json.put("remoteaddr", jsoncmd.optString("remoteaddr")) }
+            if (!jsoncmd.isNull("soptions")) {
+                var soptions : JSONObject = jsoncmd.getJSONObject("soptions")
+                if (!soptions.isNull("userid")) { json.put("userid", soptions.optString("userid")) }
+                if (!soptions.isNull("sessionid")) { json.put("sessionid", soptions.optString("sessionid")) }
+            }
+        }
+        if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+    }
+
+    fun logServerEventEx(id:Int, args:JSONArray?, msg:String, jsoncmd:JSONObject?) {
+        val json = JSONObject()
+        json.put("action", "log")
+        json.put("msgid", id)
+        if (args != null) { json.put("msgArgs", args) }
+        json.put("msg", msg)
+        if (jsoncmd != null) {
+            if (!jsoncmd.isNull("userid")) { json.put("userid", jsoncmd.optString("userid")) }
+            if (!jsoncmd.isNull("username")) { json.put("username", jsoncmd.optString("username")) }
+            if (!jsoncmd.isNull("sessionid")) { json.put("sessionid", jsoncmd.optString("sessionid")) }
+            if (!jsoncmd.isNull("remoteaddr")) { json.put("remoteaddr", jsoncmd.optString("remoteaddr")) }
+            if (!jsoncmd.isNull("soptions")) {
+                var soptions : JSONObject = jsoncmd.getJSONObject("soptions")
+                if (!soptions.isNull("userid")) { json.put("userid", soptions.optString("userid")) }
+                if (!soptions.isNull("sessionid")) { json.put("sessionid", soptions.optString("sessionid")) }
+            }
+        }
+        if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
     }
 
 }

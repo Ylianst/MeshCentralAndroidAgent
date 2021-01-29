@@ -21,16 +21,20 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 
+var mainFragment:MainFragment? = null
+var scannerFragment:ScannerFragment? = null
+var webFragment:WebViewFragment? = null
+var visibleScreen:Int = 1
+var serverLink:String? = null
+var meshAgent:MeshAgent? = null
+var agentCertificate:X509Certificate? = null
+var agentCertificateKey:PrivateKey? = null
+var pageUrl:String? = null
 
 class MainActivity : AppCompatActivity() {
-    var mainFragment:MainFragment? = null
-    var visibleScreen:Int = 1
-    var serverLink:String? = null
-    var meshAgent:MeshAgent? = null
-    var agentCertificate:X509Certificate? = null
-    var agentCertificateKey:PrivateKey? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        println("onCreate - main")
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         serverLink = sharedPreferences?.getString("qrmsh", null)
 
@@ -70,9 +74,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         var item1 = menu.findItem(R.id.action_setup_server);
-        item1.isEnabled = (visibleScreen == 1);
+        item1.isVisible = (visibleScreen == 1);
         var item2 = menu.findItem(R.id.action_clear_server);
-        item2.isEnabled = (visibleScreen == 1) && (serverLink != null);
+        item2.isVisible = (visibleScreen == 1) && (serverLink != null);
+        var item3 = menu.findItem(R.id.action_close);
+        item3.isVisible = (visibleScreen != 1);
         return true
     }
 
@@ -91,6 +97,11 @@ class MainActivity : AppCompatActivity() {
             confirmServerClear()
         }
 
+        if (item.itemId == R.id.action_close) {
+            // Close
+            returnToMainScreen()
+        }
+
         return when(item.itemId) {
             R.id.action_setup_server -> true
             else -> super.onOptionsItemSelected(item)
@@ -102,6 +113,30 @@ class MainActivity : AppCompatActivity() {
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         sharedPreferences.edit().putString("qrmsh", x).apply()
         mainFragment?.refreshInfo()
+    }
+
+    // Open a URL in the web view fragment
+    fun openUrl(xpageUrl: String) : Boolean {
+        if (visibleScreen == 2) return false
+        pageUrl = xpageUrl;
+        if (visibleScreen == 1) {
+            if (mainFragment != null) mainFragment?.moveToWebPage(xpageUrl)
+        } else {
+            this.runOnUiThread {
+                if (webFragment != null) webFragment?.navigate(xpageUrl)
+            }
+        }
+        return true
+    }
+
+    fun returnToMainScreen() {
+        this.runOnUiThread {
+            if (visibleScreen == 2) {
+                if (scannerFragment != null) scannerFragment?.exit()
+            } else if (visibleScreen == 3) {
+                if (webFragment != null) webFragment?.exit()
+            }
+        }
     }
 
     fun refreshInfo() {

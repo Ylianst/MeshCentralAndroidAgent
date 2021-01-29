@@ -10,6 +10,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.InputStream
 import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.security.cert.CertificateException
@@ -18,6 +19,7 @@ import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
+import kotlin.concurrent.thread
 
 class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSocketListener() {
     private var parent : MeshAgent = parent
@@ -29,6 +31,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     private var state: Int = 0
     private var usage: Int = 0
     private var tunnelOptions : JSONObject? = null
+    private var fileInputStream : InputStream? = null
 
     init {
         //println("MeshTunnel Init: ${serverData.toString()}")
@@ -271,8 +274,8 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
 
         val projection = arrayOf(
             MediaStore.MediaColumns._ID,
-            MediaStore.MediaColumns.DISPLAY_NAME
-            //MediaStore.MediaColumns.SIZE
+            MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.SIZE
         )
         var uri : Uri? = null;
         if (filenameSplit[0].equals("Images")) { uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI }
@@ -291,23 +294,33 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         if (cursor != null) {
             val idColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-            //val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+            val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
             while (cursor.moveToNext()) {
                 var name = cursor.getString(titleColumn)
                 if (name == filenameSplit[1]) {
                     var contentUrl: Uri = ContentUris.withAppendedId(uri, cursor.getLong(idColumn))
-                    //var fileSize = cursor.getInt(sizeColumn)
+                    var fileSize = cursor.getInt(sizeColumn)
+
+                    // Event to the server
+                    var eventArgs = JSONArray()
+                    eventArgs.put(filename)
+                    eventArgs.put(fileSize)
+                    parent.logServerEventEx(106, eventArgs, "Download: ${filename}, Size: $fileSize", serverData);
+
+                    // Serve the file
                     parent.parent.getContentResolver().openInputStream(contentUrl).use { stream ->
                         // Perform operation on stream
-                        var buf = ByteArray(4096)
+                        var buf = ByteArray(65535)
                         var len : Int
                         while (true) {
-                            len = stream!!.read(buf, 0, 4096)
-                            if (len <= 0) break; // Stream is done
-                            if (_webSocket == null) break; // Web socket closed
+                            len = stream!!.read(buf, 0, 65535)
+                            if (len <= 0) { stopSocket(); break; } // Stream is done
+                            if (_webSocket == null) { stopSocket(); break; } // Web socket closed
                             _webSocket?.send(buf.toByteString(0, len))
+                            if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
                         }
                     }
+                    return;
                 }
             }
         }

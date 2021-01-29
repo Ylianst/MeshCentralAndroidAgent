@@ -24,26 +24,26 @@ import com.karumi.dexter.listener.single.PermissionListener
  * A simple [Fragment] subclass as the default destination in the navigation.
  */
 class MainFragment : Fragment(), MultiplePermissionsListener {
-
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        (activity as MainActivity).mainFragment = this
         // Inflate the layout for this fragment
         return inflater.inflate(R.layout.main_fragment, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        println("onViewCreated - main")
+        mainFragment = this
+        visibleScreen = 1;
 
         refreshInfo()
 
         view.findViewById<Button>(R.id.agentActionButton).setOnClickListener {
-            var serverLink = (activity as MainActivity).serverLink;
+            var serverLink = serverLink;
             if (serverLink == null) {
                 // Setup the server
-                (activity as MainActivity).visibleScreen = 2;
                 findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
             } else {
                 if ((activity as MainActivity).isAgentDisconnected() == false) {
@@ -64,12 +64,15 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
     }
 
     fun moveToScanner() {
-        (activity as MainActivity).visibleScreen = 2;
         findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
     }
 
+    fun moveToWebPage(pageUrl: String) {
+        findNavController().navigate(R.id.action_FirstFragment_to_webViewFragment)
+    }
+
     fun refreshInfo() {
-        var serverLink = (activity as MainActivity).serverLink;
+        println("serverLink: $serverLink")
         view?.findViewById<TextView>(R.id.serverNameTextView)?.text = getServerHost(serverLink)
         if (serverLink == null) {
             // Server not setup
@@ -78,7 +81,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             view?.findViewById<TextView>(R.id.agentActionButton)?.text = getString(R.string.setup_server)
         } else {
             // Server is setup, display state of the agent
-            val state = (activity as MainActivity).meshAgent?.state;
+            val state = meshAgent?.state;
+            println("state: $state")
             if ((state == 0) || (state == null)) {
                 // Disconnected
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F

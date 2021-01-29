@@ -9,7 +9,12 @@
         app:showAsAction="never" />
     <item
         android:id="@+id/action_clear_server"
-        android:orderInCategory="100"
+        android:orderInCategory="101"
         android:title="@string/clear_server"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_close"
+        android:orderInCategory="102"
+        android:title="@string/close"
         app:showAsAction="never" />
 </menu>

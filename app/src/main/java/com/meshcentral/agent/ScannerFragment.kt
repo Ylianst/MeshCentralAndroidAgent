@@ -38,10 +38,12 @@ class ScannerFragment : Fragment(), PermissionListener {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        println("onViewCreated - scanner")
+        scannerFragment = this;
+        visibleScreen = 2;
 
         view.findViewById<Button>(R.id.button_second).setOnClickListener {
             lastToast?.cancel()
-            (activity as MainActivity).visibleScreen = 1;
             findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
         }
 
@@ -110,7 +112,7 @@ class ScannerFragment : Fragment(), PermissionListener {
         builder.setTitle("MeshCentral Server")
         builder.setMessage("Setup to: ${getServerHost(x)}?")
         builder.setPositiveButton(android.R.string.ok) { _, _ ->
-            (activity as MainActivity).visibleScreen = 1
+            visibleScreen = 1
             (activity as MainActivity).setMeshServerLink(x)
             findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
         }
@@ -132,7 +134,10 @@ class ScannerFragment : Fragment(), PermissionListener {
 
     override fun onPermissionDenied(p0: PermissionDeniedResponse?) {
         println("onPermissionDenied")
-        (activity as MainActivity).visibleScreen = 1
+        findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
+    }
+
+    fun exit() {
         findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
     }
 
