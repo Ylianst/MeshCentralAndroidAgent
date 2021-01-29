@@ -1,6 +1,8 @@
 package com.meshcentral.agent
 
 import android.Manifest
+import android.app.AlertDialog
+import android.net.Uri
 import android.os.Bundle
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
@@ -24,6 +26,8 @@ import com.karumi.dexter.listener.single.PermissionListener
  * A simple [Fragment] subclass as the default destination in the navigation.
  */
 class MainFragment : Fragment(), MultiplePermissionsListener {
+    var alert : AlertDialog? = null
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -60,6 +64,26 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 }
             }
         }
+
+        // Check if the app was called using a URL link
+        var data: Uri? = (activity as MainActivity).intent.data;
+        if (data != null && data.isHierarchical()) {
+            var uri: String? = (activity as MainActivity).intent.dataString;
+            if ((uri != null) && (isMshStringValid(uri))) {
+                confirmServerSetup(uri)
+            }
+        }
+    }
+
+    fun isMshStringValid(x:String):Boolean {
+        if (x.startsWith("mc://") == false)  return false
+        var xs = x.split(',')
+        if (xs.count() < 3) return false
+        if (xs[0].length < 8) return false
+        if (xs[1].length < 3) return false
+        if (xs[2].length < 3) return false
+        if (xs[0].indexOf('.') == -1) return false
+        return true
     }
 
     fun moveToScanner() {
@@ -77,9 +101,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.4F
             view?.findViewById<TextView>(R.id.agentStatusTextview)?.text = getString(R.string.no_server_setup)
             view?.findViewById<TextView>(R.id.agentActionButton)?.text = getString(R.string.setup_server)
+            view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = cameraPresent
         } else {
             // Server is setup, display state of the agent
             val state = meshAgent?.state;
+            view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = true
             if ((state == 0) || (state == null)) {
                 // Disconnected
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
@@ -132,4 +158,29 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         token?.continuePermissionRequest()
     }
 
+    fun confirmServerSetup(x:String) {
+        val builder = AlertDialog.Builder(activity)
+        builder.setTitle("MeshCentral Server")
+        builder.setMessage("Setup to: ${getServerHost(x)}?")
+        builder.setPositiveButton(android.R.string.ok) { _, _ ->
+            (activity as MainActivity).setMeshServerLink(x)
+            (activity as MainActivity).intent.removeExtra("key");
+            (activity as MainActivity).intent.action = "";
+            (activity as MainActivity).intent.data = null;
+        }
+        builder.setNeutralButton(android.R.string.cancel) { _, _ ->
+            (activity as MainActivity).intent.removeExtra("key");
+            (activity as MainActivity).intent.action = "";
+            (activity as MainActivity).intent.data = null;
+        }
+        alert = builder.show()
+    }
+
+    override fun onDestroy() {
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
+        super.onDestroy()
+    }
 }

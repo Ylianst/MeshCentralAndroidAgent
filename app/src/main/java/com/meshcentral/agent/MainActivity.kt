@@ -6,6 +6,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Bundle
 import android.util.Base64
@@ -30,30 +32,28 @@ var meshAgent:MeshAgent? = null
 var agentCertificate:X509Certificate? = null
 var agentCertificateKey:PrivateKey? = null
 var pageUrl:String? = null
+var cameraPresent : Boolean = false
 
 class MainActivity : AppCompatActivity() {
+    var alert : AlertDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        println("onCreate - main")
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         serverLink = sharedPreferences?.getString("qrmsh", null)
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         setSupportActionBar(findViewById(R.id.toolbar))
-        /*
-        findViewById<FloatingActionButton>(R.id.fab).setOnClickListener { view ->
-            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
-        }
-        */
 
+        // Register to get battery events
         val intentFilter = IntentFilter()
         intentFilter.addAction(Intent.ACTION_POWER_CONNECTED)
         intentFilter.addAction(Intent.ACTION_POWER_DISCONNECTED)
         intentFilter.addAction(Intent.ACTION_BATTERY_CHANGED)
-
         registerReceiver(batteryInfoReceiver, intentFilter)
+
+        // Check if this device has a camera
+        cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)
     }
 
     private fun sendConsoleMessage(msg:String) {
@@ -75,6 +75,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         var item1 = menu.findItem(R.id.action_setup_server);
         item1.isVisible = (visibleScreen == 1);
+        item1.isEnabled = cameraPresent;
         var item2 = menu.findItem(R.id.action_clear_server);
         item2.isVisible = (visibleScreen == 1) && (serverLink != null);
         var item3 = menu.findItem(R.id.action_close);
@@ -88,12 +89,12 @@ class MainActivity : AppCompatActivity() {
         // as you specify a parent activity in AndroidManifest.xml.
 
         if (item.itemId == R.id.action_setup_server) {
-            // Move to QR code reader
-            if (mainFragment != null) mainFragment?.moveToScanner()
+            // Move to QR code reader if a camera is present
+            if ((mainFragment != null) && cameraPresent) mainFragment?.moveToScanner()
         }
 
         if (item.itemId == R.id.action_clear_server) {
-            // Move to QR code reader
+            // Remove the server
             confirmServerClear()
         }
 
@@ -106,6 +107,14 @@ class MainActivity : AppCompatActivity() {
             R.id.action_setup_server -> true
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    override fun onDestroy() {
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
+        super.onDestroy()
     }
 
     fun setMeshServerLink(x: String?) {
@@ -149,6 +158,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun confirmServerClear() {
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
         val builder = AlertDialog.Builder(this)
         builder.setTitle("MeshCentral Server")
         builder.setMessage("Clear server setup?")
@@ -156,16 +169,20 @@ class MainActivity : AppCompatActivity() {
             this.setMeshServerLink(null)
         }
         builder.setNeutralButton(android.R.string.cancel) { _, _ -> }
-        builder.show()
+        alert = builder.show()
     }
 
     fun showAlertMessage(title: String, msg: String) {
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
         this.runOnUiThread {
             val builder = AlertDialog.Builder(this)
             builder.setTitle(title)
             builder.setMessage(msg)
             builder.setPositiveButton(android.R.string.ok) { _, _ -> {} }
-            builder.show()
+            alert = builder.show()
         }
     }
 

@@ -27,6 +27,7 @@ import java.util.jar.Manifest
 class ScannerFragment : Fragment(), PermissionListener {
     private var lastToast : Toast? = null
     private lateinit var codeScanner: CodeScanner
+    var alert : AlertDialog? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -52,7 +53,7 @@ class ScannerFragment : Fragment(), PermissionListener {
         codeScanner = CodeScanner(activity, scannerView)
         codeScanner.decodeCallback = DecodeCallback {
             activity.runOnUiThread {
-                if (isQrMshValid(it.text)) {
+                if (isMshStringValid(it.text)) {
                     lastToast?.cancel()
                     confirmServerSetup(it.text)
                 } else {
@@ -69,6 +70,10 @@ class ScannerFragment : Fragment(), PermissionListener {
     }
 
     override fun onDestroy() {
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
         lastToast?.cancel()
         super.onDestroy()
     }
@@ -88,17 +93,6 @@ class ScannerFragment : Fragment(), PermissionListener {
         super.onPause()
     }
 
-    fun isQrMshValid(x:String):Boolean {
-        if (x.startsWith("mc://") == false)  return false
-        var xs = x.split(',')
-        if (xs.count() < 3) return false
-        if (xs[0].length < 8) return false
-        if (xs[1].length < 3) return false
-        if (xs[2].length < 3) return false
-        if (xs[0].indexOf('.') == -1) return false
-        return true
-    }
-
     fun getServerHost(serverLink : String?) : String? {
         if (serverLink == null) return null
         var x : List<String> = serverLink.split(',')
@@ -107,6 +101,10 @@ class ScannerFragment : Fragment(), PermissionListener {
     }
 
     fun confirmServerSetup(x:String) {
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
         val builder = AlertDialog.Builder(activity)
         builder.setTitle("MeshCentral Server")
         builder.setMessage("Setup to: ${getServerHost(x)}?")
@@ -118,7 +116,7 @@ class ScannerFragment : Fragment(), PermissionListener {
         builder.setNeutralButton(android.R.string.cancel) { _, _ ->
             codeScanner.startPreview()
         }
-        builder.show()
+        alert = builder.show()
     }
 
     override fun onPermissionGranted(p0: PermissionGrantedResponse?) {
@@ -140,4 +138,14 @@ class ScannerFragment : Fragment(), PermissionListener {
         findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
     }
 
+    fun isMshStringValid(x:String):Boolean {
+        if (x.startsWith("mc://") == false)  return false
+        var xs = x.split(',')
+        if (xs.count() < 3) return false
+        if (xs[0].length < 8) return false
+        if (xs[1].length < 3) return false
+        if (xs[2].length < 3) return false
+        if (xs[0].indexOf('.') == -1) return false
+        return true
+    }
 }

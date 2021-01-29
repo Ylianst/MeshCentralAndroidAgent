@@ -562,7 +562,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         when (cmd) {
             "help" -> {
                 // Return the list of available console commands
-                r = "Available commands: alert, battery, dial, flash, netinfo, openurl, serverlog, sysinfo, toast, uiclose, uistate, vibrate"
+                r = "Available commands: alert, battery, dial, flash, netinfo, openurl, openbrowser,\r\n  serverlog, sysinfo, toast, uiclose, uistate, vibrate"
             }
             "alert" -> {
                 // Display alert message
@@ -627,8 +627,31 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 var battState : JSONObject? = getSysBatteryInfo();
                 if (battState == null) { r = "No battery" } else { r = battState.toString(2) }
             }
-            "openurl" -> {
+            "openbrowser" -> {
                 // Open a URL
+                if (splitCmd.size < 2) {
+                    r = "Usage:\r\n  openbrowser \"url\"";
+                } else if (splitCmd.size >= 2) {
+                    if (splitCmd[1].startsWith("https://") || splitCmd[1].startsWith("http://")) {
+                        if (visibleScreen == 2) {
+                            r = "Device is busy in QR code scanner"
+                        } else {
+                            // Open the URL
+                            try {
+                                var getintent : Intent = Intent(Intent.ACTION_VIEW, Uri.parse(splitCmd[1]));
+                                parent.startActivity(getintent);
+                                r = "Ok"
+                            } catch (ex : Exception) {
+                                r = "Error opening: ${splitCmd[1]}"
+                            }
+                        }
+                    } else {
+                        r = "Url must start with http:// or https://"
+                    }
+                }
+            }
+            "openurl" -> {
+                // Open a URL in the agent application
                 if (splitCmd.size < 2) {
                     r = "Usage:\r\n  openurl \"url\"";
                 } else if (splitCmd.size >= 2) {

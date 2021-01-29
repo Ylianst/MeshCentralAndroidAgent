@@ -35,6 +35,7 @@ class WebViewFragment : Fragment() {
         webFragment = this
         visibleScreen = 3;
         browser = view.findViewById(R.id.mainWebView) as WebView
+        browser?.settings?.javaScriptEnabled = true
         browser?.webViewClient = object : WebViewClient(){
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
@@ -65,6 +66,7 @@ class WebViewFragment : Fragment() {
                 super.onSafeBrowsingHit(view, request, threatType, callback)
                 println("onSafeBrowsingHit: $threatType")
             }
+
 
         }
         browser?.loadUrl(pageUrl!!)
