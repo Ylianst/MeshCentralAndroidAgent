@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
+import android.net.Uri
 import android.os.*
 import android.provider.Settings
 import android.util.Base64
@@ -336,6 +337,27 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 "netinfo" -> {
                     sendNetworkUpdate(true)
                 }
+                "openUrl" ->{
+                    /*
+                    if (visibleScreen != 2) { // Device is busy in QR code scanner
+                        // Open the URL
+                        var xurl = json.optString("url")
+                        //println("Opening: $xurl")
+                        if ((xurl != null) && (parent.openUrl(xurl))) {
+                            // Event to the server
+                            var eventArgs = JSONArray()
+                            eventArgs.put(xurl)
+                            logServerEventEx(20, eventArgs, "Opening: ${xurl}", json);
+                        }
+                    }
+                    */
+
+                    var xurl = json.optString("url")
+                    if (xurl != null) {
+                        var getintent : Intent = Intent(Intent.ACTION_VIEW, Uri.parse(xurl));
+                        parent.startActivity(getintent);
+                    }
+                }
                 "msg" -> {
                     var msgtype = json.getString("type")
                     when (msgtype) {
@@ -540,7 +562,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         when (cmd) {
             "help" -> {
                 // Return the list of available console commands
-                r = "Available commands: alert, battery, flash, netinfo, openurl, serverlog, sysinfo, toast, uiclose, uistate, vibrate"
+                r = "Available commands: alert, battery, dial, flash, netinfo, openurl, serverlog, sysinfo, toast, uiclose, uistate, vibrate"
             }
             "alert" -> {
                 // Display alert message
@@ -581,6 +603,15 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     eventArgs.put(splitCmd[1])
                     logServerEventEx(26, eventArgs, "Displaying toast message, title=None, message=${splitCmd[1]}", jsoncmd);
                     r = "Ok";
+                }
+            }
+            "dial" -> {
+                if (splitCmd.size < 2) {
+                    r = "Usage:\r\n  dial [phonenumber]";
+                } else if (splitCmd.size >= 2) {
+                    var getintent : Intent = Intent(Intent.ACTION_VIEW, Uri.parse("tel:${splitCmd[1]}"));
+                    parent.startActivity(getintent);
+                    r = "ok"
                 }
             }
             "sysinfo" -> {

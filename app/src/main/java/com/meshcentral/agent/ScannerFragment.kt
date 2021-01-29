@@ -38,7 +38,6 @@ class ScannerFragment : Fragment(), PermissionListener {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        println("onViewCreated - scanner")
         scannerFragment = this;
         visibleScreen = 2;
 

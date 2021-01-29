@@ -34,7 +34,6 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        println("onViewCreated - main")
         mainFragment = this
         visibleScreen = 1;
 
@@ -72,7 +71,6 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
     }
 
     fun refreshInfo() {
-        println("serverLink: $serverLink")
         view?.findViewById<TextView>(R.id.serverNameTextView)?.text = getServerHost(serverLink)
         if (serverLink == null) {
             // Server not setup
@@ -82,7 +80,6 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         } else {
             // Server is setup, display state of the agent
             val state = meshAgent?.state;
-            println("state: $state")
             if ((state == 0) || (state == null)) {
                 // Disconnected
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
