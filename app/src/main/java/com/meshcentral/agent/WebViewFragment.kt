@@ -46,6 +46,8 @@ class WebViewFragment : Fragment() {
                 view?.loadUrl(url!!)
                 return true
             }
+
+            /*
             override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler, error: SslError) {
                 // Ignore TLS certificate errors and instruct the WebViewClient to load the website
                 println("onReceivedSslError: $error")
@@ -66,8 +68,7 @@ class WebViewFragment : Fragment() {
                 super.onSafeBrowsingHit(view, request, threatType, callback)
                 println("onSafeBrowsingHit: $threatType")
             }
-
-
+            */
         }
         browser?.loadUrl(pageUrl!!)
     }
