@@ -1,6 +1,7 @@
 package com.meshcentral.agent
 
 import SelfSignedCertificate
+import android.app.Activity
 import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -10,6 +11,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Bundle
+import android.provider.MediaStore
 import android.util.Base64
 import android.view.Gravity
 import android.view.Menu
@@ -33,6 +35,7 @@ var agentCertificate:X509Certificate? = null
 var agentCertificateKey:PrivateKey? = null
 var pageUrl:String? = null
 var cameraPresent : Boolean = false
+var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 
 class MainActivity : AppCompatActivity() {
     var alert : AlertDialog? = null
@@ -115,6 +118,26 @@ class MainActivity : AppCompatActivity() {
             alert = null
         }
         super.onDestroy()
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        println("onActivityResult, requestCode: $requestCode, resultCode: $resultCode, data: ${data.toString()}")
+        super.onActivityResult(requestCode, resultCode, data)
+
+        var pad : PendingActivityData? = null
+        for (b in pendingActivities) { if (b.id == requestCode) { pad = b } }
+
+        if (pad != null) {
+            if (resultCode == Activity.RESULT_OK) {
+                println("Approved: ${pad.url}, ${pad.where}, ${pad.args}")
+                pad.tunnel.deleteFileEx(pad)
+            } else {
+                println("Denied: ${pad.url}, ${pad.where}, ${pad.args}")
+                pad.tunnel.deleteFileEx(pad)
+            }
+            pendingActivities.remove(pad)
+        }
+
     }
 
     fun setMeshServerLink(x: String?) {
