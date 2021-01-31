@@ -1,7 +1,6 @@
 package com.meshcentral.agent
 
 import android.content.Context
-import android.content.Context.BATTERY_SERVICE
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
@@ -11,7 +10,6 @@ import android.net.Uri
 import android.os.*
 import android.provider.Settings
 import android.util.Base64
-import androidx.core.content.ContextCompat.getSystemService
 import okhttp3.*
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -26,7 +24,6 @@ import java.security.Signature
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPublicKey
-import java.util.*
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -286,6 +283,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         //println("Connected and verified")
         UpdateState(3) // Switch to connected and verified
         startConnectionTimer()
+        sendCoreInfo()
         sendNetworkUpdate(false)
 
         // Send battery state
@@ -409,6 +407,16 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         catch (e: Exception) {
             println("processAgentData Exception: ${e.toString()}")
         }
+    }
+
+    // Send the latest core information to the server
+    fun sendCoreInfo() {
+        val r = JSONObject()
+        r.put("action", "coreinfo")
+        r.put("value", "Android Core v${BuildConfig.VERSION_NAME}")
+        r.put("caps", 12)
+        if (pushMessagingToken != null) { r.put("pmt", pushMessagingToken) }
+        if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
     }
 
     fun removeTunnel(tunnel: MeshTunnel) {

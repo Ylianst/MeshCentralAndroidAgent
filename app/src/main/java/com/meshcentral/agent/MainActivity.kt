@@ -1,23 +1,23 @@
 package com.meshcentral.agent
 
 import SelfSignedCertificate
-import android.app.Activity
-import android.app.AlertDialog
+import android.app.*
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.BatteryManager
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
-import android.provider.MediaStore
 import android.util.Base64
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.firebase.iid.FirebaseInstanceId
 import java.io.ByteArrayInputStream
 import java.security.KeyFactory
 import java.security.PrivateKey
@@ -25,6 +25,7 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 
+var g_mainActivity:MainActivity? = null
 var mainFragment:MainFragment? = null
 var scannerFragment:ScannerFragment? = null
 var webFragment:WebViewFragment? = null
@@ -36,17 +37,25 @@ var agentCertificateKey:PrivateKey? = null
 var pageUrl:String? = null
 var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
+var pushMessagingToken : String? = null
 
 class MainActivity : AppCompatActivity() {
     var alert : AlertDialog? = null
+    lateinit var notificationChannel: NotificationChannel
+    lateinit var notificationManager: NotificationManager
+    lateinit var builder: Notification.Builder
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        g_mainActivity = this
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         serverLink = sharedPreferences?.getString("qrmsh", null)
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         setSupportActionBar(findViewById(R.id.toolbar))
+
+        // Setup notification manager
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Register to get battery events
         val intentFilter = IntentFilter()
@@ -57,9 +66,18 @@ class MainActivity : AppCompatActivity() {
 
         // Check if this device has a camera
         cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)
+
+        // Setup push notifications
+        println("Asking for token")
+        FirebaseInstanceId.getInstance().instanceId.addOnSuccessListener(this
+        ) { instanceIdResult ->
+            pushMessagingToken = instanceIdResult.token
+            println("messagingToken: $pushMessagingToken")
+        }
+
     }
 
-    private fun sendConsoleMessage(msg:String) {
+    private fun sendConsoleMessage(msg: String) {
         if (meshAgent != null) { meshAgent?.sendConsoleResponse(msg, null) }
     }
 
@@ -113,6 +131,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        g_mainActivity = null
         if (alert != null) {
             alert?.dismiss()
             alert = null
@@ -258,7 +277,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     //println("Loading certificates...")
                     agentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
-                            ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
+                        ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
                     ) as X509Certificate
                     val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
                     agentCertificateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
@@ -275,5 +294,29 @@ class MainActivity : AppCompatActivity() {
             meshAgent = null
         }
         mainFragment?.refreshInfo()
+    }
+
+    fun showNotification(title: String?, body: String?) {
+        println("showNotification: $title, $body")
+        val intent = Intent(this, MainActivity::class.java)
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            notificationChannel = NotificationChannel(getString(R.string.default_notification_channel_id), "MeshCentral Agent Channel", NotificationManager.IMPORTANCE_DEFAULT)
+            notificationChannel.lightColor = Color.BLUE
+            notificationChannel.enableVibration(true)
+            notificationManager.createNotificationChannel(notificationChannel)
+            builder = Notification.Builder(this, getString(com.meshcentral.agent.R.string.default_notification_channel_id))
+                .setContentTitle(title)
+                .setContentText(body)
+                .setAutoCancel(true)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
+                .setContentIntent(pendingIntent)
+        }
+
+        // Add notification
+        notificationManager.notify(0, builder.build())
     }
 }
