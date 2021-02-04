@@ -30,28 +30,37 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        //println("onMessageReceived-from: ${remoteMessage.from}")
+        //println("onMessageReceived-data: ${remoteMessage.data}")
         super.onMessageReceived(remoteMessage)
-        println("onMessageReceived-from: ${remoteMessage.from}")
+
+        var url : String? = null
+        if ((remoteMessage.data != null) && (remoteMessage.data["url"] != null)) {
+            url = remoteMessage.data["url"];
+        }
 
         if (remoteMessage.notification != null) {
             if (g_mainActivity != null) {
-                g_mainActivity?.showNotification(remoteMessage.notification?.title, remoteMessage.notification?.body)
+                g_mainActivity?.showNotification(remoteMessage.notification?.title, remoteMessage.notification?.body, url)
             }
         } else if (remoteMessage.data != null) {
             var cmd : String? = remoteMessage.data["con"]
             var session : String? = remoteMessage.data["s"]
-            if ((cmd != null) && (session != null)) { processConsoleMessage(cmd, session, remoteMessage.from!!) }
+            var relayId : String? = remoteMessage.data["r"]
+            if ((cmd != null) && (session != null)) { processConsoleMessage(cmd, session, relayId, remoteMessage.from!!) }
         }
     }
 
-    fun sendMessage(to:String, cmd:String, session:String) {
+    fun sendMessage(to:String, cmd:String, session:String, relayId: String?) {
         println("sendMessage: $to, $cmd, $session")
         val fm = FirebaseMessaging.getInstance()
-        fm.send(RemoteMessage.Builder("${to}@gcm.googleapis.com")
-                .setMessageId(Integer.toString(msgId.incrementAndGet()))
-                .addData("con", cmd)
-                .addData("s", session)
-                .build())
+
+        var m = RemoteMessage.Builder("${to}@gcm.googleapis.com")
+        m.setMessageId(Integer.toString(msgId.incrementAndGet()))
+        m.addData("con", cmd)
+        m.addData("s", session)
+        if (relayId != null) { m.addData("r", relayId) }
+        fm.send(m.build())
     }
 
     private fun parseArgString(s: String) : List<String> {
@@ -70,7 +79,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
         return r.toList()
     }
 
-    private fun processConsoleMessage(cmdLine: String, session: String, to: String) {
+    private fun processConsoleMessage(cmdLine: String, session: String, relayId: String?, to: String) {
         //println("Console: $cmdLine")
 
         // Parse the incoming console command
@@ -163,7 +172,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
             }
         }
 
-        if (r != null) { sendMessage(to, r, session) }
+        if (r != null) { sendMessage(to, r, session, relayId) }
     }
 
     private fun getSysBuildInfo() : JSONObject {

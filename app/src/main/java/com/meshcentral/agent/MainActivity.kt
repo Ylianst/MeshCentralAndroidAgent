@@ -7,8 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Base64
@@ -75,6 +75,11 @@ class MainActivity : AppCompatActivity() {
             println("messagingToken: $pushMessagingToken")
         }
 
+        // See if we there open by a notification with a URL
+        if (intent.getStringExtra("url") != null) {
+            var getintent : Intent = Intent(Intent.ACTION_VIEW, Uri.parse(intent.getStringExtra("url")));
+            startActivity(getintent);
+        }
     }
 
     private fun sendConsoleMessage(msg: String) {
@@ -277,7 +282,7 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     //println("Loading certificates...")
                     agentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
-                        ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
+                            ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
                     ) as X509Certificate
                     val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
                     agentCertificateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
@@ -296,10 +301,12 @@ class MainActivity : AppCompatActivity() {
         mainFragment?.refreshInfo()
     }
 
-    fun showNotification(title: String?, body: String?) {
+    fun showNotification(title: String?, body: String?, url: String?) {
         println("showNotification: $title, $body")
+
         val intent = Intent(this, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        if (url != null) { intent.putExtra("url", url!!); }
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -312,7 +319,7 @@ class MainActivity : AppCompatActivity() {
                 .setContentText(body)
                 .setAutoCancel(true)
                 .setSmallIcon(R.mipmap.ic_launcher)
-                .setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
+                //.setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
                 .setContentIntent(pendingIntent)
         }
 
