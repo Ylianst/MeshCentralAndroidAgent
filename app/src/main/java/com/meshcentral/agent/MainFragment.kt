@@ -66,11 +66,13 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         }
 
         // Check if the app was called using a URL link
-        var data: Uri? = (activity as MainActivity).intent.data;
-        if (data != null && data.isHierarchical()) {
-            var uri: String? = (activity as MainActivity).intent.dataString;
-            if ((uri != null) && (isMshStringValid(uri))) {
-                confirmServerSetup(uri)
+        if ((activity != null) && ((activity as MainActivity).intent != null) && ((activity as MainActivity).intent.data != null)) {
+            var data: Uri? = (activity as MainActivity).intent.data;
+            if (data != null && data.isHierarchical()) {
+                var uri: String? = (activity as MainActivity).intent.dataString;
+                if ((uri != null) && (isMshStringValid(uri))) {
+                    confirmServerSetup(uri)
+                }
             }
         }
     }
@@ -104,7 +106,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = cameraPresent
         } else {
             // Server is setup, display state of the agent
-            val state = meshAgent?.state;
+            var state : Int = 0;
+            if (meshAgent != null) { state = meshAgent!!.state; }
             view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = true
             if ((state == 0) || (state == null)) {
                 // Disconnected
