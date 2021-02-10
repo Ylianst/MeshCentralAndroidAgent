@@ -82,7 +82,6 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
             override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
                 serverTlsCertHash = MessageDigest.getInstance("SHA-384").digest(chain?.get(0)?.encoded)
-                println("checkServerTrusted: $serverTlsCertHash")
             }
 
             override fun getAcceptedIssuers() = arrayOf<X509Certificate>()
