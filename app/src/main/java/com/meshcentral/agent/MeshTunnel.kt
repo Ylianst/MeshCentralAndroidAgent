@@ -23,6 +23,7 @@ import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.*
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
@@ -105,6 +106,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.MINUTES)
                 .writeTimeout(60, TimeUnit.MINUTES)
+                .hostnameVerifier ( hostnameVerifier = HostnameVerifier{ _, _ -> true })
                 .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
                 .build()
     }
