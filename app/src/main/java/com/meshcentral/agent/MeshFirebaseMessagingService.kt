@@ -30,12 +30,28 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
-        //println("onMessageReceived-from: ${remoteMessage.from}")
-        //println("onMessageReceived-data: ${remoteMessage.data}")
+        println("onMessageReceived-from: ${remoteMessage.from}")
+        println("onMessageReceived-data: ${remoteMessage.data}")
+        println("serverLink: $serverLink")
+
         super.onMessageReceived(remoteMessage)
 
+        // If the server link is not set, see if we can load it
+        if (serverLink == null) {
+            val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
+            serverLink = sharedPreferences?.getString("qrmsh", null)
+        }
+
+        // The data is empty or the server is not set, bad notification.
+        if ((remoteMessage.data == null) || (remoteMessage.data["shash"] == null) || (serverLink == null) || (remoteMessage.data["shash"]!!.length < 12)) return;
+
+        // Check the server's agent hash against the notification.
+        var x : List<String> = serverLink!!.split(',')
+        if (!x[1].startsWith(remoteMessage.data["shash"]!!)) return;
+
+        // Get the notification URL if one is present
         var url : String? = null
-        if ((remoteMessage.data != null) && (remoteMessage.data["url"] != null)) {
+        if ((remoteMessage.data["url"] != null)) {
             url = remoteMessage.data["url"];
         }
 
