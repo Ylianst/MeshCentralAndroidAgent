@@ -68,11 +68,11 @@ class MainActivity : AppCompatActivity() {
         cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)
 
         // Setup push notifications
-        println("Asking for token")
+        //println("Asking for token")
         FirebaseInstanceId.getInstance().instanceId.addOnSuccessListener(this
         ) { instanceIdResult ->
             pushMessagingToken = instanceIdResult.token
-            println("messagingToken: $pushMessagingToken")
+            //println("messagingToken: $pushMessagingToken")
         }
 
         // See if we there open by a notification with a URL
@@ -161,10 +161,14 @@ class MainActivity : AppCompatActivity() {
             }
             pendingActivities.remove(pad)
         }
-
     }
 
     fun setMeshServerLink(x: String?) {
+        if (serverLink == x) return
+        if (meshAgent != null) { // Stop the agent
+            meshAgent?.Stop()
+            meshAgent = null
+        }
         serverLink = x
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         sharedPreferences.edit().putString("qrmsh", x).apply()

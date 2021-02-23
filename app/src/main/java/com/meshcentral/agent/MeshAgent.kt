@@ -421,7 +421,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     fun sendCoreInfo() {
         val r = JSONObject()
         r.put("action", "coreinfo")
-        r.put("value", "Android Core v${BuildConfig.VERSION_NAME}")
+        r.put("value", "Android Agent v${BuildConfig.VERSION_NAME}")
         r.put("caps", 12)
         if (pushMessagingToken != null) { r.put("pmt", pushMessagingToken) }
         if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
