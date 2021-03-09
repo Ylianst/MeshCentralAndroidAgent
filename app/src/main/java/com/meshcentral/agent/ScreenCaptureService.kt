@@ -36,10 +36,10 @@ class ScreenCaptureService : Service() {
     private var mDisplay: Display? = null
     private var mVirtualDisplay: VirtualDisplay? = null
     private var mDensity = 0
-    private var mWidth = 0
-    private var mHeight = 0
     private var mRotation = 0
     private var mOrientationChangeCallback: ScreenCaptureService.OrientationChangeCallback? = null
+    var mWidth = 0
+    var mHeight = 0
 
     private inner class ImageAvailableListener : OnImageAvailableListener {
 
@@ -69,7 +69,7 @@ class ScreenCaptureService : Service() {
 
                     // write bitmap to a file
                     //fos = FileOutputStream(mStoreDir + "/myscreen_" + ScreenCaptureService.Companion.IMAGES_PRODUCED + ".jpg")
-                    //bitmap!!.compress(Bitmap.CompressFormat.JPEG, 50, fos)
+                    //bitmap!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, fos)
                     ScreenCaptureService.Companion.IMAGES_PRODUCED++
                     //Log.e(ScreenCaptureService.Companion.TAG, "captured image: " + ScreenCaptureService.Companion.IMAGES_PRODUCED)
 
@@ -205,7 +205,7 @@ class ScreenCaptureService : Service() {
 
                 // register media projection stop callback
                 mMediaProjection!!.registerCallback(this.MediaProjectionStopCallback(), mHandler)
-                g_projecting = true
+                g_ScreenCaptureService = this
                 sendAgentConsole("Started display sharing")
             }
         }
@@ -222,7 +222,7 @@ class ScreenCaptureService : Service() {
             mHandler!!.post {
                 if (mMediaProjection != null) {
                     mMediaProjection!!.stop()
-                    g_projecting = false
+                    g_ScreenCaptureService = null
                     sendAgentConsole("Stopped display sharing")
                 }
             }
@@ -236,6 +236,7 @@ class ScreenCaptureService : Service() {
         mHeight = Resources.getSystem().displayMetrics.heightPixels
 
         sendAgentConsole("Screen: $mWidth x $mHeight")
+        updateTunnelDisplaySize()
 
         // start capture reader
         mImageReader = ImageReader.newInstance(mWidth, mHeight, PixelFormat.RGBA_8888, 2)
@@ -279,5 +280,27 @@ class ScreenCaptureService : Service() {
 
         private val virtualDisplayFlags: Int
             private get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
+    }
+
+    fun updateTunnelDisplaySize() {
+        if (meshAgent == null) return;
+        for (t in meshAgent!!.tunnels) {
+            if ((t.state == 2) && (t.usage == 2)) { // If this is a connected desktop tunnel...
+                t.updateDesktopDisplaySize() // Send updated screen size
+            }
+        }
+    }
+
+    fun checkNoMoreDesktopTunnels() {
+        if (meshAgent == null) return;
+        var desktopTunnelCloud = 0
+        for (t in meshAgent!!.tunnels) {
+            // If this is a connected desktop tunnel, count it
+            if ((t.state == 2) && (t.usage == 2)) { desktopTunnelCloud++ }
+        }
+        if ((desktopTunnelCloud == 0) && (g_mainActivity != null)) {
+            // If there are no more desktop tunnels, stop projection
+            g_mainActivity!!.stopProjection()
+        }
     }
 }

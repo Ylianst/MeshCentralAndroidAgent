@@ -41,7 +41,11 @@ var pageUrl:String? = null
 var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
-var g_projecting : Boolean = false
+var g_ScreenCaptureService : ScreenCaptureService? = null
+var g_desktop_imageType : Int = 1
+var g_desktop_compressionLevel : Int = 40
+var g_desktop_scalingLevel : Int = 1024
+var g_desktop_frameRateLimiter : Int = 100
 
 class MainActivity : AppCompatActivity() {
     var alert : AlertDialog? = null
@@ -111,9 +115,9 @@ class MainActivity : AppCompatActivity() {
         var item3 = menu.findItem(R.id.action_close);
         item3.isVisible = (visibleScreen != 1);
         var item4 = menu.findItem(R.id.action_sharescreen);
-        item4.isVisible = (g_projecting == false) && (meshAgent != null) && (meshAgent!!.state == 3)
+        item4.isVisible = false // (g_ScreenCaptureService == null) && (meshAgent != null) && (meshAgent!!.state == 3)
         var item5 = menu.findItem(R.id.action_stopscreensharing);
-        item5.isVisible = (g_projecting == true)
+        item5.isVisible = (g_ScreenCaptureService != null)
         return true
     }
 
@@ -359,7 +363,7 @@ class MainActivity : AppCompatActivity() {
 
     /****************************************** UI Widget Callbacks  */
     fun startProjection() {
-        if (g_projecting || (meshAgent == null) || (meshAgent!!.state != 3)) return
+        if ((g_ScreenCaptureService != null) || (meshAgent == null) || (meshAgent!!.state != 3)) return
         if (meshAgent != null) {
             meshAgent!!.sendConsoleResponse("Asking for display consent", sessionid = null)
         }
@@ -368,7 +372,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun stopProjection() {
-        if (!g_projecting) return
+        if (g_ScreenCaptureService == null) return
         startService(com.meshcentral.agent.ScreenCaptureService.getStopIntent(this))
     }
 

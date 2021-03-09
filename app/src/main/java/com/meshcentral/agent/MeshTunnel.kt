@@ -15,9 +15,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
-import java.io.FileOutputStream
-import java.io.OutputStream
+import java.io.*
 import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -47,8 +45,8 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     private var _webSocket: WebSocket? = null
     private var serverTlsCertHash: ByteArray? = null
     private var connectionTimer: CountDownTimer? = null
-    private var state: Int = 0
-    private var usage: Int = 0
+    var state: Int = 0 // 0 = Disconnected, 1 = Connecting, 2 = Connected
+    var usage: Int = 0 // 2 = Desktop, 5 = Files, 10 = File transfer
     private var tunnelOptions : JSONObject? = null
     private var lastDirRequest : JSONObject? = null
     private var fileUpload : OutputStream? = null
@@ -134,6 +132,11 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         }
         // Remove the tunnel from the parent's list
         parent.removeTunnel(this) // Notify the parent that this tunnel is done
+
+        // Check if there are no more remote desktop tunnels
+        if ((usage == 2) && (g_ScreenCaptureService != null)) {
+            g_ScreenCaptureService!!.checkNoMoreDesktopTunnels()
+        }
     }
 
     companion object {
@@ -166,14 +169,25 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     println("Unexpected usage $text != $serverExpectedUsage");
                     stopSocket(); return
                 }
-                usage = xusage;
+                usage = xusage; // 2 = Desktop, 5 = Files, 10 = File transfer
                 state = 2
 
                 // Start the connection time except if this is a file transfer
                 if (usage != 10) {
                     //println("Connected usage $usage")
                     startConnectionTimer()
+                    if (usage == 2) {
+                        // If this is a remote desktop usage...
+                        if (g_ScreenCaptureService == null) {
+                            // Request media projection
+                            parent.parent.startProjection()
+                        } else {
+                            // Send the display size
+                            updateDesktopDisplaySize()
+                        }
+                    }
                 } else {
+                    // This is a file transfer
                     if (tunnelOptions == null) {
                         println("No file transfer options");
                         stopSocket();
@@ -239,11 +253,61 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 json.put("action", "uploadack")
                 json.put("reqid", fileUploadReqId)
                 if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+            } else {
+                if (msg.size < 2) return
+                var cmd : Int = (msg[0].toInt() shl 8) + msg[1].toInt()
+                var cmdsize : Int = (msg[2].toInt() shl 8) + msg[3].toInt()
+                if (cmdsize != msg.size) return
+                //println("Cmd $cmd, Size: ${msg.size}, Hex: ${msg.toByteArray().toHex()}")
+                if (usage ==2) processBinaryDesktopCmd(cmd, cmdsize, msg) // Remote desktop
             }
         }
         catch (e: Exception) {
             println("Tunnel-Exception: ${e.toString()}")
         }
+    }
+
+    private fun processBinaryDesktopCmd(cmd : Int, cmdsize: Int, msg: ByteString) {
+        when (cmd) {
+            1 -> { // Legacy key input
+                // Nop
+            }
+            2 -> { // Mouse input
+                // Nop
+            }
+            5 -> { // Remote Desktop Settings
+                if (cmdsize < 6) return
+                g_desktop_imageType = msg[4].toInt()
+                g_desktop_compressionLevel = msg[5].toInt()
+                if (cmdsize >= 8) { g_desktop_scalingLevel = (msg[6].toInt() shl 8) + msg[7].toInt() }
+                if (cmdsize >= 10) { g_desktop_frameRateLimiter = (msg[8].toInt() shl 8) + msg[9].toInt() }
+                println("Desktop Settings, type=$g_desktop_imageType, comp=$g_desktop_compressionLevel, scale=$g_desktop_scalingLevel, rate=$g_desktop_frameRateLimiter")
+            }
+            6 -> { // Refresh
+                // Nop
+                println("Desktop Refresh")
+            }
+            85 -> { // Unicode key input
+                // Nop
+            }
+            else -> {
+                println("Unknown desktop binary command: $cmd, Size: ${msg.size}, Hex: ${msg.toByteArray().toHex()}")
+            }
+        }
+    }
+
+    fun updateDesktopDisplaySize() {
+        if ((g_ScreenCaptureService == null) || (_webSocket == null)) return
+        var bytesOut = ByteArrayOutputStream()
+        DataOutputStream(bytesOut).use { dos ->
+            with(dos) {
+                writeShort(7) // Screen size command
+                writeShort(8) // Screen size command size
+                writeShort(g_ScreenCaptureService!!.mWidth) // Width
+                writeShort(g_ScreenCaptureService!!.mHeight) // Height
+            }
+        }
+        _webSocket!!.send(bytesOut.toByteArray().toByteString())
     }
 
     // Cause some data to be sent over the websocket control channel every 2 minutes to keep it open

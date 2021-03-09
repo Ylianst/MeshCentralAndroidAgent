@@ -46,7 +46,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     private var connectionTimer: CountDownTimer? = null
     private var lastBattState : JSONObject? = null
     private var lastNetInfo : String? = null
-    private var tunnels : ArrayList<MeshTunnel> = ArrayList()
+    var tunnels : ArrayList<MeshTunnel> = ArrayList()
 
     init {
         //println("MeshAgent Constructor: ${host}, ${certHash}, $devGroupId")
@@ -316,6 +316,15 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             var action = json.getString("action")
             //println("action: $action")
             when (action) {
+                "ping" -> {
+                    // Return a pong
+                    val r = JSONObject()
+                    r.put("action", "pong")
+                    if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
+                }
+                "pong" -> {
+                    // Nop
+                }
                 "sysinfo" -> {
                     //println("SysInfo")
                     val s = JSONObject()
@@ -406,6 +415,12 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                         }
                     }
                 }
+                "coredump" -> {
+                    // Nop
+                }
+                "getcoredump" -> {
+                    // Nop
+                }
                 else -> {
                     // Unknown command, ignore it.
                     println("Unhandled action: $action")
@@ -422,7 +437,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         val r = JSONObject()
         r.put("action", "coreinfo")
         r.put("value", "Android Agent v${BuildConfig.VERSION_NAME}")
-        r.put("caps", 12)
+        r.put("caps", 13) // Capability bitmask: 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript, 32 = Temporary Agent, 64 = Recovery Agent
         if (pushMessagingToken != null) { r.put("pmt", pushMessagingToken) }
         if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
     }
@@ -726,7 +741,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             }
             "kvmstart" -> {
                 // Start remote desktop
-                if (!g_projecting) {
+                if (g_ScreenCaptureService == null) {
                     parent.startProjection()
                     r = "ok"
                 } else {
@@ -735,7 +750,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             }
             "kvmstop" -> {
                 // Stop remote desktop
-                if (g_projecting) {
+                if (g_ScreenCaptureService != null) {
                     parent.stopProjection()
                     r = "ok"
                 } else {
