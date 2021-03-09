@@ -13,8 +13,18 @@
         android:title="@string/clear_server"
         app:showAsAction="never" />
     <item
-        android:id="@+id/action_close"
+        android:id="@+id/action_sharescreen"
         android:orderInCategory="102"
+        android:title="@string/sharescreen"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_stopscreensharing"
+        android:orderInCategory="103"
+        android:title="@string/stopsharescreen"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_close"
+        android:orderInCategory="104"
         android:title="@string/close"
         app:showAsAction="never" />
 </menu>

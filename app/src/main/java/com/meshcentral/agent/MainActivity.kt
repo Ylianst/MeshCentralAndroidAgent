@@ -25,6 +25,9 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 
+import android.app.Activity
+import android.media.projection.MediaProjectionManager
+
 var g_mainActivity:MainActivity? = null
 var mainFragment:MainFragment? = null
 var scannerFragment:ScannerFragment? = null
@@ -38,6 +41,7 @@ var pageUrl:String? = null
 var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
+var g_projecting : Boolean = false
 
 class MainActivity : AppCompatActivity() {
     var alert : AlertDialog? = null
@@ -106,6 +110,10 @@ class MainActivity : AppCompatActivity() {
         item2.isVisible = (visibleScreen == 1) && (serverLink != null);
         var item3 = menu.findItem(R.id.action_close);
         item3.isVisible = (visibleScreen != 1);
+        var item4 = menu.findItem(R.id.action_sharescreen);
+        item4.isVisible = (g_projecting == false) && (meshAgent != null) && (meshAgent!!.state == 3)
+        var item5 = menu.findItem(R.id.action_stopscreensharing);
+        item5.isVisible = (g_projecting == true)
         return true
     }
 
@@ -129,6 +137,16 @@ class MainActivity : AppCompatActivity() {
             returnToMainScreen()
         }
 
+        if (item.itemId == R.id.action_sharescreen) {
+            // Start projection
+            startProjection()
+        }
+
+        if (item.itemId == R.id.action_stopscreensharing) {
+            // Stop projection
+            stopProjection()
+        }
+
         return when(item.itemId) {
             R.id.action_setup_server -> true
             else -> super.onOptionsItemSelected(item)
@@ -147,6 +165,13 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         println("onActivityResult, requestCode: $requestCode, resultCode: $resultCode, data: ${data.toString()}")
         super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == MainActivity.Companion.REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+                startService(com.meshcentral.agent.ScreenCaptureService.getStartIntent(this, resultCode, data))
+                return
+            }
+        }
 
         var pad : PendingActivityData? = null
         for (b in pendingActivities) { if (b.id == requestCode) { pad = b } }
@@ -299,6 +324,7 @@ class MainActivity : AppCompatActivity() {
             meshAgent?.Start()
         } else if (meshAgent != null) {
             // Stop the agent
+            stopProjection()
             meshAgent?.Stop()
             meshAgent = null
         }
@@ -319,15 +345,34 @@ class MainActivity : AppCompatActivity() {
             notificationChannel.enableVibration(true)
             notificationManager.createNotificationChannel(notificationChannel)
             builder = Notification.Builder(this, getString(com.meshcentral.agent.R.string.default_notification_channel_id))
+                .setSmallIcon(R.drawable.ic_message)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setAutoCancel(true)
-                .setSmallIcon(R.mipmap.ic_launcher)
                 //.setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
                 .setContentIntent(pendingIntent)
         }
 
         // Add notification
         notificationManager.notify(0, builder.build())
+    }
+
+    /****************************************** UI Widget Callbacks  */
+    fun startProjection() {
+        if (g_projecting || (meshAgent == null) || (meshAgent!!.state != 3)) return
+        if (meshAgent != null) {
+            meshAgent!!.sendConsoleResponse("Asking for display consent", sessionid = null)
+        }
+        val mProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        startActivityForResult(mProjectionManager.createScreenCaptureIntent(), MainActivity.Companion.REQUEST_CODE)
+    }
+
+    fun stopProjection() {
+        if (!g_projecting) return
+        startService(com.meshcentral.agent.ScreenCaptureService.getStopIntent(this))
+    }
+
+    companion object {
+        private const val REQUEST_CODE = 100
     }
 }

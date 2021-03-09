@@ -37,7 +37,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     val host : String = host
     val serverCertHash: String = certHash
     val devGroupId: String = devGroupId
-    var state : Int = 0
+    var state : Int = 0 // 0 = Disconnected, 1 = Connecting, 2 = Authenticating, 3 = Connected
     var nonce : ByteArray? = null
     var serverNonce: ByteArray? = null
     var serverTlsCertHash: ByteArray? = null
@@ -722,6 +722,24 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 } else if (splitCmd.size >= 2) {
                     logServerEvent(splitCmd[1], jsoncmd)
                     r = "ok"
+                }
+            }
+            "kvmstart" -> {
+                // Start remote desktop
+                if (!g_projecting) {
+                    parent.startProjection()
+                    r = "ok"
+                } else {
+                    r = "Already started"
+                }
+            }
+            "kvmstop" -> {
+                // Stop remote desktop
+                if (g_projecting) {
+                    parent.stopProjection()
+                    r = "ok"
+                } else {
+                    r = "Already stopped"
                 }
             }
             "vibrate" -> {
