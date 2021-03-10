@@ -8,23 +8,28 @@
         android:title="@string/setup_server"
         app:showAsAction="never" />
     <item
-        android:id="@+id/action_clear_server"
+        android:id="@+id/action_manual_setup_server"
         android:orderInCategory="101"
+        android:title="@string/manual_setup_server"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_clear_server"
+        android:orderInCategory="102"
         android:title="@string/clear_server"
         app:showAsAction="never" />
     <item
         android:id="@+id/action_sharescreen"
-        android:orderInCategory="102"
+        android:orderInCategory="103"
         android:title="@string/sharescreen"
         app:showAsAction="never" />
     <item
         android:id="@+id/action_stopscreensharing"
-        android:orderInCategory="103"
+        android:orderInCategory="104"
         android:title="@string/stopsharescreen"
         app:showAsAction="never" />
     <item
         android:id="@+id/action_close"
-        android:orderInCategory="104"
+        android:orderInCategory="105"
         android:title="@string/close"
         app:showAsAction="never" />
 </menu>

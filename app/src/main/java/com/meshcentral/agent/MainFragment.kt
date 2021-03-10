@@ -47,7 +47,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             var serverLink = serverLink;
             if (serverLink == null) {
                 // Setup the server
-                findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
+                if (cameraPresent) {
+                    findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
+                } else {
+                    g_mainActivity!!.promptForServerLink()
+                }
             } else {
                 if ((activity as MainActivity).isAgentDisconnected() == false) {
                     (activity as MainActivity).toggleAgentConnection()
@@ -103,7 +107,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.4F
             view?.findViewById<TextView>(R.id.agentStatusTextview)?.text = getString(R.string.no_server_setup)
             view?.findViewById<TextView>(R.id.agentActionButton)?.text = getString(R.string.setup_server)
-            view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = cameraPresent
+            //view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = cameraPresent
         } else {
             // Server is setup, display state of the agent
             var state : Int = 0;

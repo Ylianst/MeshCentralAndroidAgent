@@ -8,13 +8,16 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.text.InputType
 import android.util.Base64
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.iid.FirebaseInstanceId
@@ -25,8 +28,6 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 
-import android.app.Activity
-import android.media.projection.MediaProjectionManager
 
 var g_mainActivity:MainActivity? = null
 var mainFragment:MainFragment? = null
@@ -118,6 +119,8 @@ class MainActivity : AppCompatActivity() {
         item4.isVisible = false // (g_ScreenCaptureService == null) && (meshAgent != null) && (meshAgent!!.state == 3)
         var item5 = menu.findItem(R.id.action_stopscreensharing);
         item5.isVisible = (g_ScreenCaptureService != null)
+        var item6 = menu.findItem(R.id.action_manual_setup_server);
+        item6.isVisible = (visibleScreen == 1) && (serverLink == null)
         return true
     }
 
@@ -149,6 +152,11 @@ class MainActivity : AppCompatActivity() {
         if (item.itemId == R.id.action_stopscreensharing) {
             // Stop projection
             stopProjection()
+        }
+
+        if (item.itemId == R.id.action_manual_setup_server) {
+            // Manually setup the server pairing
+            promptForServerLink()
         }
 
         return when(item.itemId) {
@@ -298,7 +306,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun toggleAgentConnection() {
-        println("toggleAgentConnection")
+        //println("toggleAgentConnection")
         if ((meshAgent == null) && (serverLink != null)) {
             // Create and connect the agent
             if (agentCertificate == null) {
@@ -336,7 +344,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showNotification(title: String?, body: String?, url: String?) {
-        println("showNotification: $title, $body")
+        //println("showNotification: $title, $body")
 
         val intent = Intent(this, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -361,7 +369,52 @@ class MainActivity : AppCompatActivity() {
         notificationManager.notify(0, builder.build())
     }
 
-    /****************************************** UI Widget Callbacks  */
+    fun isMshStringValid(x:String):Boolean {
+        if (x.startsWith("mc://") == false)  return false
+        var xs = x.split(',')
+        if (xs.count() < 3) return false
+        if (xs[0].length < 8) return false
+        if (xs[1].length < 3) return false
+        if (xs[2].length < 3) return false
+        if (xs[0].indexOf('.') == -1) return false
+        return true
+    }
+
+    // Show alert asking for server pairing link
+    fun promptForServerLink() {
+        val builder: AlertDialog.Builder = AlertDialog.Builder(this)
+        builder.setTitle("Server Pairing Link")
+
+        // Set up the input
+        val input = EditText(this)
+        input.inputType = InputType.TYPE_CLASS_TEXT
+        builder.setView(input)
+
+        // Set up the buttons
+        builder.setPositiveButton(android.R.string.ok) { _, _ ->
+            var link = input.text.toString()
+            println("LINK: $link")
+            if (isMshStringValid(link)) {
+                setMeshServerLink(link)
+            } else {
+                indicateInvalidLink()
+            }
+        }
+        builder.setNegativeButton(android.R.string.cancel) { dialog, which -> dialog.cancel() }
+        builder.show()
+    }
+
+    // Show alert that server pairing link is invalid
+    fun indicateInvalidLink() {
+        val builder: AlertDialog.Builder = AlertDialog.Builder(this)
+        builder.setTitle("Invalid Server Pairing Link")
+
+        // Set up the buttons
+        builder.setPositiveButton(android.R.string.ok) { dialog, which -> dialog.cancel() }
+        builder.show()
+    }
+
+    // Start screen sharing
     fun startProjection() {
         if ((g_ScreenCaptureService != null) || (meshAgent == null) || (meshAgent!!.state != 3)) return
         if (meshAgent != null) {
@@ -371,6 +424,7 @@ class MainActivity : AppCompatActivity() {
         startActivityForResult(mProjectionManager.createScreenCaptureIntent(), MainActivity.Companion.REQUEST_CODE)
     }
 
+    // Stop screen sharing
     fun stopProjection() {
         if (g_ScreenCaptureService == null) return
         startService(com.meshcentral.agent.ScreenCaptureService.getStopIntent(this))

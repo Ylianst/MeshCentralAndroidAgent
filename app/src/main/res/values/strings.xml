@@ -5,6 +5,7 @@
     <string name="first_fragment_label">First Fragment</string>
     <string name="second_fragment_label">Second Fragment</string>
     <string name="setup_server">Setup Server</string>
+    <string name="manual_setup_server">Manual Server Setup</string>
     <string name="connect">Connect</string>
     <string name="disconnect">Disconnect</string>
     <string name="clear_server">Clear Server</string>
