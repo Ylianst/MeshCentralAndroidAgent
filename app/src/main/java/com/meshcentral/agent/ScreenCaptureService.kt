@@ -16,21 +16,20 @@ import android.media.ImageReader
 import android.media.ImageReader.OnImageAvailableListener
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.os.CountDownTimer
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.util.Log
 import android.view.Display
 import android.view.OrientationEventListener
 import android.view.WindowManager
 import androidx.core.util.Pair
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
+import java.io.*
 
 class ScreenCaptureService : Service() {
     private var mMediaProjection: MediaProjection? = null
-    private var mStoreDir: String? = null
     private var mImageReader: ImageReader? = null
     private var mHandler: Handler? = null
     private var mDisplay: Display? = null
@@ -49,41 +48,45 @@ class ScreenCaptureService : Service() {
                 return
             }
 
-            var fos: FileOutputStream? = null
             var bitmap: Bitmap? = null
             var image: android.media.Image? = null
             if (mImageReader == null) return
 
             try {
                 image = mImageReader!!.acquireLatestImage()
-                if (image != null) {
+                // Skip this image if null or websocket push-back is high
+                if ((image != null) && (checkDesktopTunnelPushback() < 65535)) {
                     val planes: Array<Plane> = image.getPlanes()
                     val buffer = planes[0].buffer
                     val pixelStride = planes[0].pixelStride
                     val rowStride = planes[0].rowStride
                     val rowPadding = rowStride - pixelStride * mWidth
 
-                    // create bitmap
+                    // Create the bitmap
                     bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888)
                     bitmap!!.copyPixelsFromBuffer(buffer)
 
-                    // write bitmap to a file
-                    //fos = FileOutputStream(mStoreDir + "/myscreen_" + ScreenCaptureService.Companion.IMAGES_PRODUCED + ".jpg")
-                    //bitmap!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, fos)
-                    ScreenCaptureService.Companion.IMAGES_PRODUCED++
-                    //Log.e(ScreenCaptureService.Companion.TAG, "captured image: " + ScreenCaptureService.Companion.IMAGES_PRODUCED)
-
-                    sendAgentConsole("Captured image " + ScreenCaptureService.Companion.IMAGES_PRODUCED)
+                    // Write bitmap to a memory and built a jumbo command
+                    var bytesOut = ByteArrayOutputStream()
+                    var dos = DataOutputStream(bytesOut)
+                    dos.writeShort(27) // Jumbo command
+                    dos.writeShort(8) // Jumbo command size
+                    dos.writeInt(0) // Next command size (0 for now)
+                    dos.writeShort(3) // Image command
+                    dos.writeShort(0) // Image command size, 0 since jumbo is used
+                    dos.writeShort(0) // X
+                    dos.writeShort(0) // Y
+                    bitmap!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+                    var data = bytesOut.toByteArray()
+                    var cmdSize : Int = (data.size - 8)
+                    data[4] = (cmdSize shr 24).toByte()
+                    data[5] = (cmdSize shr 16).toByte()
+                    data[6] = (cmdSize shr 8).toByte()
+                    data[7] = (cmdSize).toByte()
+                    sendDesktopTunnelData(data.toByteString()) // Send the data to all remote desktop tunnels
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-            }
-            if (fos != null) {
-                try {
-                    fos!!.close()
-                } catch (ioe: IOException) {
-                    ioe.printStackTrace()
-                }
             }
             if (bitmap != null) {
                 bitmap!!.recycle()
@@ -98,25 +101,35 @@ class ScreenCaptureService : Service() {
         override fun onOrientationChanged(orientation: Int) {
             if (mDisplay == null) return;
             val rotation = mDisplay!!.rotation
+            println("rotation $rotation")
             if (rotation != mRotation) {
                 mRotation = rotation
-                try {
-                    // clean up
-                    if (mVirtualDisplay != null) mVirtualDisplay!!.release()
-                    if (mImageReader != null) mImageReader!!.setOnImageAvailableListener(null, null)
 
-                    // re-create virtual display depending on device width / height
-                    createVirtualDisplay()
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                var rotationTimer = object: CountDownTimer(200, 200) {
+                    override fun onTick(millisUntilFinished: Long) {
+                        // Nop
+                    }
+                    override fun onFinish() {
+                        try {
+                            // Clean up
+                            if (mVirtualDisplay != null) mVirtualDisplay!!.release()
+                            if (mImageReader != null) mImageReader!!.setOnImageAvailableListener(null, null)
+
+                            // Re-create virtual display depending on device width / height
+                            createVirtualDisplay()
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
                 }
+                rotationTimer?.start()
             }
         }
     }
 
     private inner class MediaProjectionStopCallback : MediaProjection.Callback() {
         override fun onStop() {
-            Log.e(ScreenCaptureService.Companion.TAG, "stopping projection.")
+            //Log.e(ScreenCaptureService.Companion.TAG, "stopping projection.")
             if (mHandler != null) {
                 mHandler!!.post {
                     if (mVirtualDisplay != null) mVirtualDisplay!!.release()
@@ -135,23 +148,6 @@ class ScreenCaptureService : Service() {
     override fun onCreate() {
         super.onCreate()
 
-        // create store dir
-        val externalFilesDir = getExternalFilesDir(null)
-        if (externalFilesDir != null) {
-            mStoreDir = externalFilesDir.absolutePath + "/screenshots/"
-            val storeDirectory = File(mStoreDir)
-            if (!storeDirectory.exists()) {
-                val success = storeDirectory.mkdirs()
-                if (!success) {
-                    Log.e(ScreenCaptureService.Companion.TAG, "failed to create file storage directory.")
-                    stopSelf()
-                }
-            }
-        } else {
-            Log.e(ScreenCaptureService.Companion.TAG, "failed to create file storage directory, getExternalFilesDir is null.")
-            stopSelf()
-        }
-
         // start capture handling thread
         object : Thread() {
             override fun run() {
@@ -164,10 +160,10 @@ class ScreenCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         if (ScreenCaptureService.Companion.isStartCommand(intent)) {
-            // create notification
+            // Create notification
             val notification: Pair<Int, Notification> = NotificationUtils.getNotification(this)
             startForeground(notification.first!!, notification.second)
-            // start projection
+            // Start projection
             val resultCode = intent.getIntExtra(ScreenCaptureService.Companion.RESULT_CODE, Activity.RESULT_CANCELED)
             val data = intent.getParcelableExtra<Intent>(ScreenCaptureService.Companion.DATA)
             startProjection(resultCode, data)
@@ -185,7 +181,7 @@ class ScreenCaptureService : Service() {
         if (mMediaProjection == null) {
             mMediaProjection = mpManager.getMediaProjection(resultCode, data!!)
             if (mMediaProjection != null) {
-                // display metrics
+                // Display metrics
                 mDensity = Resources.getSystem().displayMetrics.densityDpi
                 val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -194,18 +190,19 @@ class ScreenCaptureService : Service() {
                     mDisplay = windowManager.defaultDisplay
                 }
 
-                // create virtual display depending on device width / height
+                // Create virtual display depending on device width / height
                 createVirtualDisplay()
 
-                // register orientation change callback
+                // Register orientation change callback
                 mOrientationChangeCallback = this.OrientationChangeCallback(this)
                 if (mOrientationChangeCallback!!.canDetectOrientation()) {
                     mOrientationChangeCallback!!.enable()
                 }
 
-                // register media projection stop callback
+                // Register media projection stop callback
                 mMediaProjection!!.registerCallback(this.MediaProjectionStopCallback(), mHandler)
                 g_ScreenCaptureService = this
+                updateTunnelDisplaySize()
                 sendAgentConsole("Started display sharing")
             }
         }
@@ -231,14 +228,14 @@ class ScreenCaptureService : Service() {
 
     @SuppressLint("WrongConstant")
     private fun createVirtualDisplay() {
-        // get width and height
+        // Get width and height
         mWidth = Resources.getSystem().displayMetrics.widthPixels
         mHeight = Resources.getSystem().displayMetrics.heightPixels
 
         sendAgentConsole("Screen: $mWidth x $mHeight")
         updateTunnelDisplaySize()
 
-        // start capture reader
+        // Start capture reader
         mImageReader = ImageReader.newInstance(mWidth, mHeight, PixelFormat.RGBA_8888, 2)
         mVirtualDisplay = mMediaProjection!!.createVirtualDisplay(ScreenCaptureService.Companion.SCREENCAP_NAME, mWidth, mHeight,
                 mDensity, ScreenCaptureService.Companion.virtualDisplayFlags, mImageReader!!.surface, null, mHandler)
@@ -254,7 +251,6 @@ class ScreenCaptureService : Service() {
         private const val START = "START"
         private const val STOP = "STOP"
         private const val SCREENCAP_NAME = "screencap"
-        private var IMAGES_PRODUCED = 0
         fun getStartIntent(context: Context?, resultCode: Int, data: Intent?): Intent {
             val intent = Intent(context, ScreenCaptureService::class.java)
             intent.putExtra(ScreenCaptureService.Companion.ACTION, ScreenCaptureService.Companion.START)
@@ -301,6 +297,31 @@ class ScreenCaptureService : Service() {
         if ((desktopTunnelCloud == 0) && (g_mainActivity != null)) {
             // If there are no more desktop tunnels, stop projection
             g_mainActivity!!.stopProjection()
+        }
+    }
+
+    // Get the maximum outbound queue size of all remote desktop sockets
+    fun checkDesktopTunnelPushback() : Long {
+        if (meshAgent == null) return -1;
+        var maxQueueSize : Long = 0
+        for (t in meshAgent!!.tunnels) {
+            // If this is a connected desktop tunnel, count it
+            if ((t.state == 2) && (t.usage == 2) && (t._webSocket != null)) {
+                var qs : Long? = t._webSocket?.queueSize()
+                if ((qs != null) && (qs > maxQueueSize)) { maxQueueSize = qs }
+            }
+        }
+        return maxQueueSize
+    }
+
+    // Send data to all remote desktop sockets
+    fun sendDesktopTunnelData(data: ByteString) {
+        if (meshAgent == null) return;
+        for (t in meshAgent!!.tunnels) {
+            // If this is a connected desktop tunnel, send the data
+            if ((t.state == 2) && (t.usage == 2) && (t._webSocket != null)) {
+                t._webSocket!!.send(data)
+            }
         }
     }
 }

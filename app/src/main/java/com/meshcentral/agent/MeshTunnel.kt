@@ -42,9 +42,9 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     private var parent : MeshAgent = parent
     private var url:String = url
     private var serverData: JSONObject = serverData
-    private var _webSocket: WebSocket? = null
     private var serverTlsCertHash: ByteArray? = null
     private var connectionTimer: CountDownTimer? = null
+    var _webSocket: WebSocket? = null
     var state: Int = 0 // 0 = Disconnected, 1 = Connecting, 2 = Connected
     var usage: Int = 0 // 2 = Desktop, 5 = Files, 10 = File transfer
     private var tunnelOptions : JSONObject? = null
@@ -259,7 +259,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 var cmdsize : Int = (msg[2].toInt() shl 8) + msg[3].toInt()
                 if (cmdsize != msg.size) return
                 //println("Cmd $cmd, Size: ${msg.size}, Hex: ${msg.toByteArray().toHex()}")
-                if (usage ==2) processBinaryDesktopCmd(cmd, cmdsize, msg) // Remote desktop
+                if (usage == 2) processBinaryDesktopCmd(cmd, cmdsize, msg) // Remote desktop
             }
         }
         catch (e: Exception) {
