@@ -59,7 +59,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     // Perform action on the agent
                     Dexter.withContext(context)
                         .withPermissions(
-                            Manifest.permission.CAMERA,
+                            //Manifest.permission.CAMERA,
                             Manifest.permission.READ_EXTERNAL_STORAGE,
                             Manifest.permission.WRITE_EXTERNAL_STORAGE
                         )

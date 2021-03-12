@@ -298,6 +298,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
 
     fun updateDesktopDisplaySize() {
         if ((g_ScreenCaptureService == null) || (_webSocket == null)) return
+        //println("updateDesktopDisplaySize: ${g_ScreenCaptureService!!.mWidth} x ${g_ScreenCaptureService!!.mHeight}")
         var bytesOut = ByteArrayOutputStream()
         DataOutputStream(bytesOut).use { dos ->
             with(dos) {
