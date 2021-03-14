@@ -185,7 +185,8 @@ class ScreenCaptureService : Service() {
                 mDensity = Resources.getSystem().displayMetrics.densityDpi
                 val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    mDisplay = this.display
+                    val displayManager = applicationContext.getSystemService(DISPLAY_SERVICE) as DisplayManager
+                    mDisplay = displayManager.getDisplay(Display.DEFAULT_DISPLAY)
                 } else {
                     mDisplay = windowManager.defaultDisplay
                 }
@@ -240,7 +241,7 @@ class ScreenCaptureService : Service() {
         mVirtualDisplay = mMediaProjection!!.createVirtualDisplay(ScreenCaptureService.Companion.SCREENCAP_NAME, mWidth, mHeight,
                 mDensity, ScreenCaptureService.Companion.virtualDisplayFlags, mImageReader!!.surface, null, mHandler)
 
-        mImageReader!!.setOnImageAvailableListener( this.ImageAvailableListener(), mHandler)
+        mImageReader!!.setOnImageAvailableListener(this.ImageAvailableListener(), mHandler)
     }
 
     companion object {
