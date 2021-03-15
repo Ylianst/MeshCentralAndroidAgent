@@ -124,8 +124,9 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             connectionTimer?.cancel()
             connectionTimer = null
         }
-        // Clear all relay tunnels
-        for (t in tunnels) { t.Stop() }
+        // Clear all relay tunnels, create a mutable list since the list may change when calling Stop()
+        var tunnelsClone : MutableList<MeshTunnel> = tunnels.toMutableList()
+        for (t in tunnelsClone) { t.Stop() }
         tunnels.clear()
         // Update the state to disconnected
         UpdateState(0) // Switch to disconnected
