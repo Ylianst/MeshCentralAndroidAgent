@@ -179,7 +179,12 @@ class ScreenCaptureService : Service() {
     private fun startProjection(resultCode: Int, data: Intent?) {
         val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         if (mMediaProjection == null) {
-            mMediaProjection = mpManager.getMediaProjection(resultCode, data!!)
+            try {
+                mMediaProjection = mpManager.getMediaProjection(resultCode, data!!)
+            } catch (ex: Exception) {
+                // Unable to get the projection manager.
+                // TODO: Deal with this situation nicely.
+            }
             if (mMediaProjection != null) {
                 // Display metrics
                 mDensity = Resources.getSystem().displayMetrics.densityDpi
