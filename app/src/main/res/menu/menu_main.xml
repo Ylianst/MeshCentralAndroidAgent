@@ -32,4 +32,9 @@
         android:orderInCategory="105"
         android:title="@string/close"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_testAuth"
+        android:orderInCategory="106"
+        android:title="Test Auth"
+        app:showAsAction="never" />
 </menu>

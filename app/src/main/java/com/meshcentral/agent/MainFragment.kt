@@ -100,6 +100,10 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         findNavController().navigate(R.id.action_FirstFragment_to_webViewFragment)
     }
 
+    fun moveToAuthPage() {
+        findNavController().navigate(R.id.action_FirstFragment_to_authFragment)
+    }
+
     fun refreshInfo() {
         view?.findViewById<TextView>(R.id.serverNameTextView)?.text = getServerHost(serverLink)
         if (serverLink == null) {

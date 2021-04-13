@@ -28,25 +28,35 @@ import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 
+// User interface values
+var g_mainActivity : MainActivity? = null
+var mainFragment : MainFragment? = null
+var scannerFragment : ScannerFragment? = null
+var webFragment : WebViewFragment? = null
+var authFragment : AuthFragment? = null
+var visibleScreen : Int = 1
 
-var g_mainActivity:MainActivity? = null
-var mainFragment:MainFragment? = null
-var scannerFragment:ScannerFragment? = null
-var webFragment:WebViewFragment? = null
-var visibleScreen:Int = 1
-var serverLink:String? = null
-var meshAgent:MeshAgent? = null
-var agentCertificate:X509Certificate? = null
-var agentCertificateKey:PrivateKey? = null
-var pageUrl:String? = null
+// Server connection values
+var serverLink : String? = null
+var meshAgent : MeshAgent? = null
+var agentCertificate : X509Certificate? = null
+var agentCertificateKey : PrivateKey? = null
+var pageUrl : String? = null
 var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
+
+// Remote desktop values
 var g_ScreenCaptureService : ScreenCaptureService? = null
 var g_desktop_imageType : Int = 1
 var g_desktop_compressionLevel : Int = 40
 var g_desktop_scalingLevel : Int = 1024
 var g_desktop_frameRateLimiter : Int = 100
+
+// Two-factor authentication values
+var g_auth_code : String? = null
+var g_auth_cookie : String? = null
+var g_auth_raddr : String? = null
 
 class MainActivity : AppCompatActivity() {
     var alert : AlertDialog? = null
@@ -121,6 +131,8 @@ class MainActivity : AppCompatActivity() {
         item5.isVisible = (g_ScreenCaptureService != null)
         var item6 = menu.findItem(R.id.action_manual_setup_server);
         item6.isVisible = (visibleScreen == 1) && (serverLink == null)
+        var item7 = menu.findItem(R.id.action_testAuth);
+        item7.isVisible = false; //(visibleScreen == 1) && (serverLink != null);
         return true
     }
 
@@ -157,6 +169,11 @@ class MainActivity : AppCompatActivity() {
         if (item.itemId == R.id.action_manual_setup_server) {
             // Manually setup the server pairing
             promptForServerLink()
+        }
+
+        if (item.itemId == R.id.action_testAuth) {
+            // Move to authentication screen
+            if (mainFragment != null) mainFragment?.moveToAuthPage()
         }
 
         return when(item.itemId) {
@@ -232,6 +249,8 @@ class MainActivity : AppCompatActivity() {
                 if (scannerFragment != null) scannerFragment?.exit()
             } else if (visibleScreen == 3) {
                 if (webFragment != null) webFragment?.exit()
+            }else if (visibleScreen == 4) {
+                if (authFragment != null) authFragment?.exit()
             }
         }
     }
