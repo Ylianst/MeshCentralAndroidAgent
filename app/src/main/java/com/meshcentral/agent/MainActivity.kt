@@ -54,9 +54,7 @@ var g_desktop_scalingLevel : Int = 1024
 var g_desktop_frameRateLimiter : Int = 100
 
 // Two-factor authentication values
-var g_auth_code : String? = null
-var g_auth_cookie : String? = null
-var g_auth_raddr : String? = null
+var g_auth_url : Uri? = null
 
 class MainActivity : AppCompatActivity() {
     var alert : AlertDialog? = null
@@ -95,9 +93,37 @@ class MainActivity : AppCompatActivity() {
         }
 
         // See if we there open by a notification with a URL
-        if (intent.getStringExtra("url") != null) {
-            var getintent : Intent = Intent(Intent.ACTION_VIEW, Uri.parse(intent.getStringExtra("url")));
-            startActivity(getintent);
+        var intentUrl : String? = intent.getStringExtra("url")
+        println("Main Activity Create URL: $intentUrl")
+        if (intentUrl != null) {
+            intent.removeExtra("url")
+            println("a0")
+            if (intentUrl.toLowerCase().startsWith("2fa://")) {
+                // if there is no server link, ignore this
+                println("a1")
+                if (serverLink != null) {
+                    // This activity was created by a 2FA message
+                    println("a2")
+                    g_auth_url = Uri.parse(intentUrl)
+                    // If not connected, connect to the server now.
+                    if (meshAgent == null) {
+                        println("a3")
+                        toggleAgentConnection();
+                    } else {
+                        // Switch to 2FA auth screen
+                        println("a4")
+                        if (mainFragment != null) {
+                            println("a5")
+                            mainFragment?.moveToAuthPage()
+                        }
+                    }
+
+                }
+            } else if (intentUrl.toLowerCase().startsWith("http://") || intentUrl.toLowerCase().startsWith("https://")) {
+                // Open an HTTP or HTTPS URL.
+                var getintent: Intent = Intent(Intent.ACTION_VIEW, Uri.parse(intentUrl));
+                startActivity(getintent);
+            }
         }
     }
 
@@ -132,7 +158,7 @@ class MainActivity : AppCompatActivity() {
         var item6 = menu.findItem(R.id.action_manual_setup_server);
         item6.isVisible = (visibleScreen == 1) && (serverLink == null)
         var item7 = menu.findItem(R.id.action_testAuth);
-        item7.isVisible = false; //(visibleScreen == 1) && (serverLink != null);
+        item7.isVisible = (visibleScreen == 1) && (serverLink != null);
         return true
     }
 

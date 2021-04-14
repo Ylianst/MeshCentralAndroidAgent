@@ -443,6 +443,15 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
     }
 
+    // Send 2FA authentication URL and approval/reject back
+    fun send2faAuth(url : Uri, approved : Boolean) {
+        val r = JSONObject()
+        r.put("action", "2faauth")
+        r.put("url", url.toString())
+        r.put("approved", approved)
+        if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
+    }
+
     fun removeTunnel(tunnel: MeshTunnel) {
         tunnels.remove(tunnel)
     }

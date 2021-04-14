@@ -112,10 +112,13 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             view?.findViewById<TextView>(R.id.agentStatusTextview)?.text = getString(R.string.no_server_setup)
             view?.findViewById<TextView>(R.id.agentActionButton)?.text = getString(R.string.setup_server)
             //view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = cameraPresent
+            if (visibleScreen == 4) { authFragment?.exit() }
         } else {
             // Server is setup, display state of the agent
             var state : Int = 0;
-            if (meshAgent != null) { state = meshAgent!!.state; }
+            if (meshAgent != null) {
+                state = meshAgent!!.state;
+            }
             view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = true
             if ((state == 0) || (state == null)) {
                 // Disconnected
@@ -124,6 +127,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     getString(R.string.disconnected)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
                     getString(R.string.connect)
+                if (visibleScreen == 4) { authFragment?.exit() }
             } else if (state == 1) {
                 // Connecting
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
@@ -131,6 +135,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     getString(R.string.connecting)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
                     getString(R.string.disconnect)
+                if (visibleScreen == 4) { authFragment?.exit() }
             } else if (state == 2) {
                 // Verifying
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
@@ -138,6 +143,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     getString(R.string.authenticating)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
                     getString(R.string.disconnect)
+                if (visibleScreen == 4) { authFragment?.exit() }
             } else if (state == 3) {
                 // Connected
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 1.0F
@@ -145,6 +151,9 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                         getString(R.string.connected)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
                         getString(R.string.disconnect)
+
+                // If we are connected and 2FA was requested, switch to 2FA screen
+                if ((g_auth_url != null) && (visibleScreen != 4)) { moveToAuthPage() }
             }
         }
     }

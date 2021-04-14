@@ -2,6 +2,7 @@ package com.meshcentral.agent
 
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.util.Base64
 import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
@@ -15,6 +16,7 @@ class AuthFragment : Fragment() {
     var countDownTimer : CountDownTimer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        println("onCreate-auth");
         super.onCreate(savedInstanceState)
     }
 
@@ -22,18 +24,26 @@ class AuthFragment : Fragment() {
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
+        println("onCreateView-auth");
         // Inflate the layout for this fragment
         return inflater.inflate(R.layout.fragment_auth, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        println("onViewCreated-auth");
         super.onViewCreated(view, savedInstanceState)
         authFragment = this
         visibleScreen = 4;
 
         // Set authentication code
         var t:TextView = view.findViewById<Button>(R.id.authTopText2) as TextView
-        if (g_auth_code != null) { t.text = g_auth_code }
+        t.text = "000000"
+        if (g_auth_url != null) {
+            var authCode: String? = g_auth_url?.getQueryParameter("code")
+            if (authCode != null) {
+                t.text = String(Base64.decode(authCode, Base64.DEFAULT), charset("UTF-8"))
+            }
+        }
 
         // Set authentication progress bar
         var p:ProgressBar = view.findViewById<Button>(R.id.authProgressBar) as ProgressBar
@@ -50,10 +60,14 @@ class AuthFragment : Fragment() {
         }.start()
 
         view.findViewById<Button>(R.id.authAcceptButton).setOnClickListener {
+            if ((meshAgent != null) && (g_auth_url != null)) { meshAgent?.send2faAuth(g_auth_url!!, true) }
+            g_auth_url = null
             exit()
         }
 
         view.findViewById<Button>(R.id.authRejectButton).setOnClickListener {
+            if ((meshAgent != null) && (g_auth_url != null)) { meshAgent?.send2faAuth(g_auth_url!!, false) }
+            g_auth_url = null
             exit()
         }
     }

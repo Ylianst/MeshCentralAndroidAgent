@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
+import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -55,8 +56,24 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
             url = remoteMessage.data["url"];
         }
 
-        if (remoteMessage.notification != null) {
+        if ((url != null) && (url.startsWith("2fa://"))) {
+            // Move to user authentication
             if (g_mainActivity != null) {
+                g_mainActivity?.runOnUiThread {
+                    g_auth_url = Uri.parse(url)
+                    if (meshAgent == null) {
+                        g_mainActivity?.toggleAgentConnection();
+                    } else {
+                        // Switch to 2FA auth screen
+                        if (mainFragment != null) {
+                            mainFragment?.moveToAuthPage()
+                        }
+                    }
+                }
+            }
+        } else if (remoteMessage.notification != null) {
+            if (g_mainActivity != null) {
+                println("Showing notification with URL: " + url);
                 g_mainActivity?.showNotification(remoteMessage.notification?.title, remoteMessage.notification?.body, url)
             }
         } else if (remoteMessage.data != null) {
