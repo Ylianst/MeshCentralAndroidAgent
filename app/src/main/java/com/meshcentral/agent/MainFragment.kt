@@ -93,15 +93,15 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
     }
 
     fun moveToScanner() {
-        findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment)
+        if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment) }
     }
 
     fun moveToWebPage(pageUrl: String) {
-        findNavController().navigate(R.id.action_FirstFragment_to_webViewFragment)
+        if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_webViewFragment) }
     }
 
     fun moveToAuthPage() {
-        findNavController().navigate(R.id.action_FirstFragment_to_authFragment)
+        if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_authFragment) }
     }
 
     fun refreshInfo() {
