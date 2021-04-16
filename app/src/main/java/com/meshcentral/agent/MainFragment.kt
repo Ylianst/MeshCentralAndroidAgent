@@ -93,14 +93,17 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
     }
 
     fun moveToScanner() {
+        println("moveToScanner $visibleScreen")
         if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment) }
     }
 
     fun moveToWebPage(pageUrl: String) {
+        println("moveToWebPage $visibleScreen")
         if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_webViewFragment) }
     }
 
     fun moveToAuthPage() {
+        println("moveToAuthPage $visibleScreen")
         if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_authFragment) }
     }
 

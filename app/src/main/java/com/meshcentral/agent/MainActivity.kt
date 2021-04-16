@@ -1,6 +1,5 @@
 package com.meshcentral.agent
 
-import SelfSignedCertificate
 import android.app.*
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -21,12 +20,20 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.firebase.iid.FirebaseInstanceId
+import org.spongycastle.asn1.x500.X500Name
+import org.spongycastle.cert.X509v3CertificateBuilder
+import org.spongycastle.cert.jcajce.JcaX509CertificateConverter
+import org.spongycastle.cert.jcajce.JcaX509v3CertificateBuilder
+import org.spongycastle.jce.provider.BouncyCastleProvider
+import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
 import java.io.ByteArrayInputStream
-import java.security.KeyFactory
-import java.security.PrivateKey
+import java.math.BigInteger
+import java.security.*
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
+import java.util.*
+import kotlin.collections.ArrayList
 
 // User interface values
 var g_mainActivity : MainActivity? = null
@@ -62,7 +69,13 @@ class MainActivity : AppCompatActivity() {
     lateinit var notificationManager: NotificationManager
     lateinit var builder: Notification.Builder
 
+    init {
+        Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
+        Security.insertProviderAt(BouncyCastleProvider(), 1)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+
         g_mainActivity = this
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         serverLink = sharedPreferences?.getString("qrmsh", null)
@@ -94,26 +107,20 @@ class MainActivity : AppCompatActivity() {
 
         // See if we there open by a notification with a URL
         var intentUrl : String? = intent.getStringExtra("url")
-        println("Main Activity Create URL: $intentUrl")
+        //println("Main Activity Create URL: $intentUrl")
         if (intentUrl != null) {
             intent.removeExtra("url")
-            println("a0")
             if (intentUrl.toLowerCase().startsWith("2fa://")) {
                 // if there is no server link, ignore this
-                println("a1")
                 if (serverLink != null) {
                     // This activity was created by a 2FA message
-                    println("a2")
                     g_auth_url = Uri.parse(intentUrl)
                     // If not connected, connect to the server now.
                     if (meshAgent == null) {
-                        println("a3")
                         toggleAgentConnection();
                     } else {
                         // Switch to 2FA auth screen
-                        println("a4")
                         if (mainFragment != null) {
-                            println("a5")
                             mainFragment?.moveToAuthPage()
                         }
                     }
@@ -158,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         var item6 = menu.findItem(R.id.action_manual_setup_server);
         item6.isVisible = (visibleScreen == 1) && (serverLink == null)
         var item7 = menu.findItem(R.id.action_testAuth);
-        item7.isVisible = (visibleScreen == 1) && (serverLink != null);
+        item7.isVisible = false //(visibleScreen == 1) && (serverLink != null);
         return true
     }
 
@@ -356,15 +363,31 @@ class MainActivity : AppCompatActivity() {
             // Create and connect the agent
             if (agentCertificate == null) {
                 val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
-                var certb64 = sharedPreferences?.getString("agentCert", null)
-                var keyb64 = sharedPreferences?.getString("agentKey", null)
+                var certb64 : String? = sharedPreferences?.getString("agentCert", null)
+                var keyb64 : String? = sharedPreferences?.getString("agentKey", null)
                 if ((certb64 == null) || (keyb64 == null)) {
-                    println("Generating new certificates...")
-                    var ssc = SelfSignedCertificate(BuildConfig.APPLICATION_ID)
-                    agentCertificate = ssc.cert()
-                    agentCertificateKey = ssc.key()
-                    sharedPreferences?.edit()?.putString("agentCert", ssc.certb64)?.apply()
-                    sharedPreferences?.edit()?.putString("agentKey", ssc.keyb64)?.apply()
+                    //println("Generating new certificates...")
+
+                    // Generate an RSA key pair
+                    val keyGen = KeyPairGenerator.getInstance("RSA")
+                    keyGen.initialize(2048, SecureRandom())
+                    val keypair = keyGen.generateKeyPair()
+
+                    // Create self signed certificate
+                    val builder: X509v3CertificateBuilder = JcaX509v3CertificateBuilder(
+                            X500Name("CN=android.agent.meshcentral.com"), // issuer authority
+                            BigInteger.valueOf(Random().nextInt().toLong()), // serial number of certificate
+                            Date(System.currentTimeMillis() - 86400000L * 365), // start of validity
+                            Date(253402300799000L), // end of certificate validity
+                            X500Name("CN=android.agent.meshcentral.com"), // subject name of certificate
+                            keypair.public) // public key of certificate
+                    agentCertificate = JcaX509CertificateConverter().setProvider("SC").getCertificate(builder
+                            .build(JcaContentSignerBuilder("SHA256withRSA").build(keypair.private))) // Private key of signing authority , here it is self signed
+                    agentCertificateKey = keypair.private
+
+                    // Save the certificate and key
+                    sharedPreferences?.edit()?.putString("agentCert", Base64.encodeToString(agentCertificate?.encoded, Base64.DEFAULT))?.apply()
+                    sharedPreferences?.edit()?.putString("agentKey", Base64.encodeToString(agentCertificateKey?.encoded, Base64.DEFAULT))?.apply()
                 } else {
                     //println("Loading certificates...")
                     agentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
@@ -414,7 +437,7 @@ class MainActivity : AppCompatActivity() {
         notificationManager.notify(0, builder.build())
     }
 
-    fun isMshStringValid(x:String):Boolean {
+    fun isMshStringValid(x: String):Boolean {
         if (x.startsWith("mc://") == false)  return false
         var xs = x.split(',')
         if (xs.count() < 3) return false
