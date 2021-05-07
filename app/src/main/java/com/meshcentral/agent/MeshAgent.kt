@@ -405,7 +405,10 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
                             var url = json.getString("value")
                             if (url.startsWith("*/")) {
-                                url = "wss://$host" + url.substring(1)
+                                var hostdns : String = host
+                                var i = host.indexOf('/') // If the hostname includes an extra domain, remove it.
+                                if (i > 0) { hostdns = host.substring(0, i); }
+                                url = "wss://$hostdns" + url.substring(1)
                             }
                             var tunnel = MeshTunnel(this, url, json)
                             tunnels.add(tunnel)
