@@ -26,6 +26,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.collections.ArrayList
+import kotlin.math.absoluteValue
 import kotlin.random.Random
 
 
@@ -279,9 +280,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 if (cmdsize < 6) return
                 g_desktop_imageType = msg[4].toInt()
                 g_desktop_compressionLevel = msg[5].toInt()
-                if (cmdsize >= 8) { g_desktop_scalingLevel = (msg[6].toInt() shl 8) + msg[7].toInt() }
-                if (cmdsize >= 10) { g_desktop_frameRateLimiter = (msg[8].toInt() shl 8) + msg[9].toInt() }
+                if (cmdsize >= 8) { g_desktop_scalingLevel = (msg[6].toInt() shl 8).absoluteValue + msg[7].toInt().absoluteValue }
+                if (cmdsize >= 10) { g_desktop_frameRateLimiter = (msg[8].toInt() shl 8).absoluteValue + msg[9].toInt().absoluteValue }
                 println("Desktop Settings, type=$g_desktop_imageType, comp=$g_desktop_compressionLevel, scale=$g_desktop_scalingLevel, rate=$g_desktop_frameRateLimiter")
+                updateDesktopDisplaySize()
             }
             6 -> { // Refresh
                 // Nop
@@ -299,13 +301,25 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     fun updateDesktopDisplaySize() {
         if ((g_ScreenCaptureService == null) || (_webSocket == null)) return
         //println("updateDesktopDisplaySize: ${g_ScreenCaptureService!!.mWidth} x ${g_ScreenCaptureService!!.mHeight}")
+
+        // Get the display size
+        var mWidth : Int = g_ScreenCaptureService!!.mWidth
+        var mHeight : Int = g_ScreenCaptureService!!.mHeight
+
+        // Scale the display if needed
+        if (g_desktop_scalingLevel != 1024) {
+            mWidth = (mWidth * g_desktop_scalingLevel) / 1024
+            mHeight = (mHeight * g_desktop_scalingLevel) / 1024
+        }
+
+        // Send the display size command
         var bytesOut = ByteArrayOutputStream()
         DataOutputStream(bytesOut).use { dos ->
             with(dos) {
                 writeShort(7) // Screen size command
                 writeShort(8) // Screen size command size
-                writeShort(g_ScreenCaptureService!!.mWidth) // Width
-                writeShort(g_ScreenCaptureService!!.mHeight) // Height
+                writeShort(mWidth) // Width
+                writeShort(mHeight) // Height
             }
         }
         _webSocket!!.send(bytesOut.toByteArray().toByteString())

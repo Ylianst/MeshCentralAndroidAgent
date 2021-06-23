@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Resources
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -28,6 +29,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import java.io.*
 
+
 class ScreenCaptureService : Service() {
     private var mMediaProjection: MediaProjection? = null
     private var mImageReader: ImageReader? = null
@@ -39,6 +41,17 @@ class ScreenCaptureService : Service() {
     private var mOrientationChangeCallback: ScreenCaptureService.OrientationChangeCallback? = null
     var mWidth = 0
     var mHeight = 0
+
+    // Tile data
+    private var tilesWide : Int = 0
+    private var tilesHigh : Int = 0
+    private var tilesFullWide : Int = 0
+    private var tilesFullHigh : Int = 0
+    private var tilesRemainingWidth : Int = 0
+    private var tilesRemainingHeight : Int = 0
+    private var tilesCount : Int = 0
+    private var oldcrcs : IntArray? = null
+    private var newcrcs : IntArray? = null
 
     private inner class ImageAvailableListener : OnImageAvailableListener {
 
@@ -66,42 +79,198 @@ class ScreenCaptureService : Service() {
                     bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888)
                     bitmap!!.copyPixelsFromBuffer(buffer)
 
-                    // Write bitmap to a memory and built a jumbo command
-                    var bytesOut = ByteArrayOutputStream()
-                    var dos = DataOutputStream(bytesOut)
-                    dos.writeShort(27) // Jumbo command
-                    dos.writeShort(8) // Jumbo command size
-                    dos.writeInt(0) // Next command size (0 for now)
-                    dos.writeShort(3) // Image command
-                    dos.writeShort(0) // Image command size, 0 since jumbo is used
-                    dos.writeShort(0) // X
-                    dos.writeShort(0) // Y
-                    bitmap!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
-                    var data = bytesOut.toByteArray()
-                    var cmdSize : Int = (data.size - 8)
-                    data[4] = (cmdSize shr 24).toByte()
-                    data[5] = (cmdSize shr 16).toByte()
-                    data[6] = (cmdSize shr 8).toByte()
-                    data[7] = (cmdSize).toByte()
-                    sendDesktopTunnelData(data.toByteString()) // Send the data to all remote desktop tunnels
+                    // Resize the bitmap if needed
+                    if (g_desktop_scalingLevel != 1024) {
+                        val newWidth = (mWidth * g_desktop_scalingLevel) / 1024
+                        val newHeight = (mHeight * g_desktop_scalingLevel) / 1024
+                        bitmap = getResizedBitmap(bitmap, newWidth, newHeight)
+                    }
+
+                    // Setup or update the CRC buffer and tile information.
+                    val wt = (bitmap!!.width / 64)
+                    val ht = (bitmap!!.height / 64)
+                    if ((tilesFullWide != wt) || (tilesFullHigh != ht)) {
+                        tilesWide = wt;
+                        tilesHigh = ht;
+                        tilesFullWide = tilesWide
+                        tilesFullHigh = tilesHigh
+                        tilesRemainingWidth = (bitmap!!.width % 64);
+                        tilesRemainingHeight = (bitmap!!.height % 64);
+                        if (tilesRemainingWidth != 0) { tilesWide++; }
+                        if (tilesRemainingHeight != 0) { tilesHigh++; }
+                        tilesCount = (tilesWide * tilesHigh);
+                        oldcrcs = IntArray(tilesCount); // 64 x 64 tiles
+                        newcrcs = IntArray(tilesCount); // 64 x 64 tiles
+                        //println("New tile count: $tilesCount")
+                    }
+
+                    // Compute all tile CRC's
+                    computeAllCRCs(bitmap);
+
+                    // Compute how many tiles have changed
+                    var changedTiles : Int = 0;
+                    for (i in 0 until tilesCount) { if (oldcrcs!![i] != newcrcs!![i]) { changedTiles++; } }
+                    if (changedTiles > 0) {
+                        // If 85% of the all tiles have changed, send the entire screen
+                        if ((changedTiles * 100) >= (tilesCount * 85))
+                        {
+                            sendEntireImage(bitmap!!)
+                            for (i in 0 until tilesCount) { oldcrcs!![i] = newcrcs!![i]; }
+                        }
+                        else
+                        {
+                            // Send all changed tiles
+                            // This version has horizontal & vertical optimization, JPEG as wide as possible then as high as possible
+                            var sendx : Int = -1;
+                            var sendy : Int = 0;
+                            var sendw : Int = 0;
+                            for (i in 0 until tilesHigh)
+                            {
+                                for (j in 0 until tilesWide)
+                                {
+                                    var tileNumber : Int = (i * tilesWide) + j;
+                                    if (oldcrcs!![tileNumber] != newcrcs!![tileNumber])
+                                    {
+                                        oldcrcs!![tileNumber] = newcrcs!![tileNumber];
+                                        if (sendx == -1) { sendx = j; sendy = i; sendw = 1; } else { sendw += 1; }
+                                    }
+                                    else
+                                    {
+                                        if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
+                                    }
+                                }
+                                if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
+                            }
+                            if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            if (bitmap != null) {
-                bitmap!!.recycle()
+            if (bitmap != null) { bitmap!!.recycle() }
+            if (image != null) { image!!.close() }
+        }
+    }
+
+    private fun sendSubBitmapRow(bm: Bitmap, x : Int, y : Int, w : Int) {
+        var h : Int = (y + 1)
+        var exit : Boolean = false
+        while (h < tilesHigh) {
+            // Check if the row is all different
+            for (xx in x until (x + w)) {
+                val tileNumber = (h * tilesWide) + xx;
+                if (oldcrcs!![tileNumber] == newcrcs!![tileNumber]) { exit = true; break; }
             }
-            if (image != null) {
-                image!!.close()
+            // If all different set the CRC's to the same, otherwise exit.
+            if (!exit) {
+                for (xx in x until (x + w)) {
+                    var tileNumber : Int = (h * tilesWide) + xx;
+                    oldcrcs!![tileNumber] = newcrcs!![tileNumber];
+                }
+            } else break;
+            h++
+        }
+        h -= y
+        sendSubImage(bm, x * 64, y * 64, w * 64, h * 64);
+    }
+
+    private fun Adler32(n : Int, state: Int) : Int {
+        var a = state shr 16;
+        var b = state and 0xFFFF;
+        a = (a + n) % 65521
+        b = (b + a) % 65521
+        return (b shl 16) + a
+    }
+
+    // Compute all CRC's
+    private fun computeAllCRCs(bm: Bitmap) {
+        // Clear all CRC's
+        for (i in 0 until tilesCount) { newcrcs!![i] = 1 }
+
+        // Compute all of the CRC's
+        for (y in 0 until tilesHigh) {
+            var h : Int = 64;
+            if (((y * 64) + 64) > bm.height) { h = (bm.height - (y * 64)) }
+            for (x in 0 until tilesWide) {
+                var w : Int = 64;
+                if (((x * 64) + 64) > bm.width) { w = (bm.width - (x * 64)) }
+                val t = (y * tilesWide) + x
+                val pixels = IntArray(w * h)
+                bm.getPixels(pixels, 0, w, x * 64, y * 64, w, h)
+                for (i in 0 until pixels.size) { newcrcs!![t] = Adler32(pixels[i], newcrcs!![t]) }
             }
         }
+    }
+
+    // Send a sub bitmap
+    private fun sendSubImage(bm: Bitmap, x: Int, y: Int, w: Int, h :Int) {
+        var ww = w;
+        var hh = h;
+        if (x + w > bm.width) { ww = (bm.width - x) }
+        if (y + h > bm.height) { hh = (bm.height - y) }
+        // Extract the sub bitmap if needed
+        val cropedBitmap: Bitmap = Bitmap.createBitmap(bm, x, y, ww, hh)
+        // Write bitmap to a memory and build a jumbo command
+        var bytesOut = ByteArrayOutputStream()
+        var dos = DataOutputStream(bytesOut)
+        dos.writeShort(27) // Jumbo command
+        dos.writeShort(8) // Jumbo command size
+        dos.writeInt(0) // Next command size (0 for now)
+        dos.writeShort(3) // Image command
+        dos.writeShort(0) // Image command size, 0 since jumbo is used
+        dos.writeShort(x) // X
+        dos.writeShort(y) // Y
+        cropedBitmap!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+        cropedBitmap.recycle()
+        var data = bytesOut.toByteArray()
+        var cmdSize : Int = (data.size - 8)
+        data[4] = (cmdSize shr 24).toByte()
+        data[5] = (cmdSize shr 16).toByte()
+        data[6] = (cmdSize shr 8).toByte()
+        data[7] = (cmdSize).toByte()
+        sendDesktopTunnelData(data.toByteString()) // Send the data to all remote desktop tunnels
+    }
+
+    private fun sendEntireImage(bm: Bitmap) {
+        // Write bitmap to a memory and build a jumbo command
+        var bytesOut = ByteArrayOutputStream()
+        var dos = DataOutputStream(bytesOut)
+        dos.writeShort(27) // Jumbo command
+        dos.writeShort(8) // Jumbo command size
+        dos.writeInt(0) // Next command size (0 for now)
+        dos.writeShort(3) // Image command
+        dos.writeShort(0) // Image command size, 0 since jumbo is used
+        dos.writeShort(0) // X
+        dos.writeShort(0) // Y
+        bm!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+        var data = bytesOut.toByteArray()
+        var cmdSize : Int = (data.size - 8)
+        data[4] = (cmdSize shr 24).toByte()
+        data[5] = (cmdSize shr 16).toByte()
+        data[6] = (cmdSize shr 8).toByte()
+        data[7] = (cmdSize).toByte()
+        sendDesktopTunnelData(data.toByteString()) // Send the data to all remote desktop tunnels
+    }
+
+    // Resize a bitmap
+    private fun getResizedBitmap(bm: Bitmap, newWidth: Int, newHeight: Int): Bitmap? {
+        val width = bm.width
+        val height = bm.height
+        val scaleWidth = newWidth.toFloat() / width
+        val scaleHeight = newHeight.toFloat() / height
+        val matrix = Matrix()
+        matrix.postScale(scaleWidth, scaleHeight)
+        val resizedBitmap = Bitmap.createBitmap(bm, 0, 0, width, height, matrix, false)
+        bm.recycle()
+        return resizedBitmap
     }
 
     private inner class OrientationChangeCallback internal constructor(context: Context?) : OrientationEventListener(context) {
         override fun onOrientationChanged(orientation: Int) {
             if (mDisplay == null) return;
             val rotation = mDisplay!!.rotation
-            println("rotation $rotation")
+            //println("rotation $rotation")
             if (rotation != mRotation) {
                 mRotation = rotation
 
