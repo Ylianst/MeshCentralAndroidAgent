@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.*
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
 import android.net.Uri
@@ -32,6 +33,16 @@ import javax.net.ssl.X509TrustManager
 import kotlin.concurrent.thread
 import kotlin.random.Random
 
+
+class MeshUserInfo(userid: String, realname: String?, image: Bitmap?) {
+    val userid: String = userid
+    val realname: String? = realname
+    val image: Bitmap? = image
+    init {
+        println("MeshUserInfo: $userid, $realname")
+    }
+}
+
 class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId: String) : WebSocketListener() {
     val parent : MainActivity = parent
     val host : String = host
@@ -47,6 +58,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     private var lastBattState : JSONObject? = null
     private var lastNetInfo : String? = null
     var tunnels : ArrayList<MeshTunnel> = ArrayList()
+    var userinfo : HashMap<String, MeshUserInfo> = HashMap() // UserID -> MeshUserInfo
 
     init {
         //println("MeshAgent Constructor: ${host}, ${certHash}, $devGroupId")
@@ -97,7 +109,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.MINUTES)
             .writeTimeout(60, TimeUnit.MINUTES)
-            .hostnameVerifier ( hostnameVerifier = HostnameVerifier{ _, _ -> true })
+            .hostnameVerifier(hostnameVerifier = HostnameVerifier { _, _ -> true })
             .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
             .build()
     }
@@ -321,7 +333,9 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     // Return a pong
                     val r = JSONObject()
                     r.put("action", "pong")
-                    if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
+                    if (_webSocket != null) {
+                        _webSocket?.send(r.toString().toByteArray().toByteString())
+                    }
                 }
                 "pong" -> {
                     // Nop
@@ -405,13 +419,15 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
                             var url = json.getString("value")
                             if (url.startsWith("*/")) {
-                                var hostdns : String = host
+                                var hostdns: String = host
                                 var i = host.indexOf('/') // If the hostname includes an extra domain, remove it.
-                                if (i > 0) { hostdns = host.substring(0, i); }
+                                if (i > 0) {
+                                    hostdns = host.substring(0, i); }
                                 url = "wss://$hostdns" + url.substring(1)
                             }
-                            var tunnel = MeshTunnel(this, url, json)
+                            val tunnel = MeshTunnel(this, url, json)
                             tunnels.add(tunnel)
+                            tunnel.Start()
                         }
                         else -> {
                             // Unknown message type, ignore it.
@@ -424,6 +440,41 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 }
                 "getcoredump" -> {
                     // Nop
+                }
+                "getUserImage" -> {
+                    // User real name and optional image
+                    var xuserid: String? = json.optString("userid")
+                    var xrealname: String? = json.optString("realname")
+                    var ximage: String? = json.optString("image")
+                    var xuserImage: Bitmap? = null
+
+                    if ((ximage != null) && (!ximage.startsWith("data:image/jpeg;base64,"))) {
+                        ximage = null; }
+
+                    if (ximage != null) {
+                        try {
+                            val imageBytes = android.util.Base64.decode(ximage.substring(23), 0)
+                            xuserImage = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+                            // Round the image edges
+                            val imageRounded = Bitmap.createBitmap(xuserImage.getWidth(), xuserImage.getHeight(), xuserImage.getConfig())
+                            val canvas = Canvas(imageRounded)
+                            val mpaint = Paint()
+                            mpaint.setAntiAlias(true)
+                            mpaint.setShader(BitmapShader(xuserImage, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
+                            canvas.drawRoundRect(RectF(0F, 0F, xuserImage.getWidth().toFloat(), xuserImage.getHeight().toFloat()), 32F, 32F, mpaint) // Round Image Corner 100 100 100 100
+                            xuserImage.recycle()
+                            xuserImage = imageRounded
+                        } catch (ex: java.lang.Exception) { }
+                    }
+
+                    if ((xuserid != null) && (xrealname != null)) {
+                        var xuserinfo: MeshUserInfo = MeshUserInfo(xuserid, xrealname, xuserImage)
+                        userinfo[xuserid] = xuserinfo
+                    }
+
+                    // Notify of user information change
+                    parent.refreshInfo()
                 }
                 else -> {
                     // Unknown command, ignore it.
@@ -447,7 +498,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     }
 
     // Send 2FA authentication URL and approval/reject back
-    fun send2faAuth(url : Uri, approved : Boolean) {
+    fun send2faAuth(url: Uri, approved: Boolean) {
         val r = JSONObject()
         r.put("action", "2faauth")
         r.put("url", url.toString())
@@ -455,8 +506,27 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
     }
 
+    // Request user image and real name if needed
+    fun sendUserImageRequest(userid: String) {
+        println("sendUserImageRequest*****")
+        if (userinfo.containsKey(userid)) {
+            parent.refreshInfo()
+            return
+        } else {
+            userinfo[userid] = MeshUserInfo(userid, null, null)
+            val r = JSONObject()
+            r.put("action", "getUserImage")
+            r.put("userid", userid)
+            println("Requesting user image: $userid")
+            if (_webSocket != null) {
+                _webSocket?.send(r.toString().toByteArray().toByteString())
+            }
+        }
+    }
+
     fun removeTunnel(tunnel: MeshTunnel) {
         tunnels.remove(tunnel)
+        parent.refreshInfo()
     }
 
     fun sendNetworkUpdate(force: Boolean) : Boolean {

@@ -54,8 +54,11 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     private var fileUploadName : String? = null
     private var fileUploadReqId : Int = 0
     private var fileUploadSize : Int = 0
+    var userid : String? = null
 
-    init {
+    init { }
+
+    fun Start() {
         //println("MeshTunnel Init: ${serverData.toString()}")
         var serverTlsCertHashHex = serverData.optString("servertlshash")
         if (serverTlsCertHashHex != null) { serverTlsCertHash = parent.hexToByteArray(
@@ -64,9 +67,14 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         //var tunnelUsage = serverData.getInt("usage")
         //var tunnelUser = serverData.getString("username")
 
+        // Set the userid and request more data about this user
+        userid = serverData.optString("userid")
+        if (userid != null) parent.sendUserImageRequest(userid!!)
+
         //println("Starting tunnel: $url")
         //println("Tunnel usage: $tunnelUsage")
         //println("Tunnel user: $tunnelUser")
+        //println("Tunnel userid: $userid")
         startSocket()
     }
 
@@ -149,7 +157,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-        //println("Tunnnel-onMessage: $text")
+        //println("Tunnel-onMessage: $text")
         if (state == 0) {
             if ((text == "c") || (text == "cr")) { state = 1; }
             return

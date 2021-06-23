@@ -320,6 +320,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    fun refreshInfo() {
+        this.runOnUiThread {
+            mainFragment?.refreshInfo()
+        }
+    }
+
     fun confirmServerClear() {
         if (alert != null) {
             alert?.dismiss()

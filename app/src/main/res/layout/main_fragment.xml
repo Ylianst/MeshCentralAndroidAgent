@@ -43,10 +43,10 @@
 
     <ImageView
         android:id="@+id/mainImageView"
-        android:layout_width="411dp"
-        android:layout_height="364dp"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
         android:alpha=".5"
-        android:scaleType="centerCrop"
+        android:scaleType="fitCenter"
         android:src="@mipmap/ic_launcher_foreground"
         app:layout_constraintBottom_toTopOf="@+id/agentStatusTextview"
         app:layout_constraintEnd_toEndOf="parent"

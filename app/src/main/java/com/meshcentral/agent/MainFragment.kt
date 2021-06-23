@@ -1,27 +1,26 @@
 package com.meshcentral.agent
 
 import android.Manifest
+import android.R.attr.*
 import android.app.AlertDialog
-import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
-import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
+import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.karumi.dexter.Dexter
 import com.karumi.dexter.MultiplePermissionsReport
 import com.karumi.dexter.PermissionToken
-import com.karumi.dexter.listener.PermissionDeniedResponse
-import com.karumi.dexter.listener.PermissionGrantedResponse
 import com.karumi.dexter.listener.PermissionRequest
 import com.karumi.dexter.listener.multi.MultiplePermissionsListener
-import com.karumi.dexter.listener.single.PermissionListener
+
 
 /**
  * A simple [Fragment] subclass as the default destination in the navigation.
@@ -30,8 +29,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
     var alert : AlertDialog? = null
 
     override fun onCreateView(
-        inflater: LayoutInflater, container: ViewGroup?,
-        savedInstanceState: Bundle?
+            inflater: LayoutInflater, container: ViewGroup?,
+            savedInstanceState: Bundle?
     ): View? {
         // Inflate the layout for this fragment
         return inflater.inflate(R.layout.main_fragment, container, false)
@@ -60,9 +59,9 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     // Perform action on the agent
                     Dexter.withContext(context)
                         .withPermissions(
-                            //Manifest.permission.CAMERA,
-                            Manifest.permission.READ_EXTERNAL_STORAGE,
-                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                                //Manifest.permission.CAMERA,
+                                Manifest.permission.READ_EXTERNAL_STORAGE,
+                                Manifest.permission.WRITE_EXTERNAL_STORAGE
                         )
                         .withListener(this)
                         .check()
@@ -82,7 +81,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         }
     }
 
-    fun isMshStringValid(x:String):Boolean {
+    fun isMshStringValid(x: String):Boolean {
         if (x.startsWith("mc://") == false)  return false
         var xs = x.split(',')
         if (xs.count() < 3) return false
@@ -121,10 +120,12 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             view?.findViewById<TextView>(R.id.agentStatusTextview)?.text = getString(R.string.no_server_setup)
             view?.findViewById<TextView>(R.id.agentActionButton)?.text = getString(R.string.setup_server)
             //view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = cameraPresent
-            if (visibleScreen == 4) { authFragment?.exit() }
+            if (visibleScreen == 4) {
+                authFragment?.exit()
+            }
         } else {
             // Server is setup, display state of the agent
-            var state : Int = 0;
+            var state: Int = 0;
             if (meshAgent != null) {
                 state = meshAgent!!.state;
             }
@@ -134,49 +135,99 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     // Trying to connect
                     view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                     view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                        getString(R.string.connecting)
+                            getString(R.string.connecting)
                     view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                        getString(R.string.disconnect)
+                            getString(R.string.disconnect)
                 } else {
                     // Disconnected
                     view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                     view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                        getString(R.string.disconnected)
+                            getString(R.string.disconnected)
                     view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                        getString(R.string.connect)
+                            getString(R.string.connect)
                 }
-                if (visibleScreen == 4) { authFragment?.exit() }
+                if (visibleScreen == 4) {
+                    authFragment?.exit()
+                }
             } else if (state == 1) {
                 // Connecting
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                 view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                    getString(R.string.connecting)
+                        getString(R.string.connecting)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                    getString(R.string.disconnect)
-                if (visibleScreen == 4) { authFragment?.exit() }
+                        getString(R.string.disconnect)
+                if (visibleScreen == 4) {
+                    authFragment?.exit()
+                }
             } else if (state == 2) {
                 // Verifying
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                 view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                    getString(R.string.authenticating)
+                        getString(R.string.authenticating)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                    getString(R.string.disconnect)
-                if (visibleScreen == 4) { authFragment?.exit() }
+                        getString(R.string.disconnect)
+                if (visibleScreen == 4) {
+                    authFragment?.exit()
+                }
             } else if (state == 3) {
                 // Connected
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 1.0F
                 view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
                         getString(R.string.connected)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                    getString(R.string.disconnect)
+                        getString(R.string.disconnect)
+
+                // Get a list of userid's with active tunnels
+                val userSessions : ArrayList<String> = ArrayList()
+                for (tunnel in meshAgent!!.tunnels) {
+                    try {
+                        if ((tunnel.userid != null) && (!userSessions.contains(tunnel!!.userid))) {
+                            userSessions.add(tunnel!!.userid!!)
+                        }
+                    } catch (ex: Exception) {}
+                }
+
+                // Set the title
+                var serverNameTitle : String? = getServerHost(serverLink)
+                var serverImage : Bitmap? = null
+                try {
+                    if (userSessions.size > 1) {
+                        serverNameTitle = "${userSessions.size} users have sessions."
+                    } else if (userSessions.size == 1) {
+                        val userid: String = userSessions[0];
+                        serverImage = meshAgent!!.userinfo[userid]!!.image
+                        if (meshAgent!!.userinfo[userid]!!.realname != null) {
+                            serverNameTitle = meshAgent!!.userinfo[userid]!!.realname;
+                        } else {
+                            serverNameTitle = userid.split("/")[2]
+                        }
+                    }
+                } catch (ex: Exception) { }
+                view?.findViewById<TextView>(R.id.serverNameTextView)?.text = serverNameTitle
+
+                val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
+                if (serverImage != null) {
+                    imageView?.setImageBitmap(serverImage)
+                    val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams
+                    param.setMargins(128,128,128,128)
+                    imageView?.layoutParams = param
+                } else {
+                    imageView?.setImageResource(R.mipmap.ic_launcher_foreground)
+                    val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams
+                    param.setMargins(0,0,0,0)
+                    imageView?.layoutParams = param
+
+                }
 
                 // If we are connected and 2FA was requested, switch to 2FA screen
-                if ((g_auth_url != null) && (visibleScreen != 4)) { moveToAuthPage() }
+                if ((g_auth_url != null) && (visibleScreen != 4)) {
+                    moveToAuthPage()
+                }
             }
         }
     }
 
-    fun getServerHost(serverLink : String?) : String? {
+    fun getServerHost(serverLink: String?) : String? {
         if (serverLink == null) return null
         var x : List<String> = serverLink.split(',')
         var serverHost = x[0]
@@ -196,7 +247,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         token?.continuePermissionRequest()
     }
 
-    fun confirmServerSetup(x:String) {
+    fun confirmServerSetup(x: String) {
         val builder = AlertDialog.Builder(activity)
         builder.setTitle("MeshCentral Server")
         builder.setMessage("Setup to: ${getServerHost(x)}?")
