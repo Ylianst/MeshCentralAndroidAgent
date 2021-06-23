@@ -62,7 +62,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
                 g_mainActivity?.runOnUiThread {
                     g_auth_url = Uri.parse(url)
                     if (meshAgent == null) {
-                        g_mainActivity?.toggleAgentConnection();
+                        g_mainActivity?.toggleAgentConnection(false);
                     } else {
                         // Switch to 2FA auth screen
                         if (mainFragment != null) {

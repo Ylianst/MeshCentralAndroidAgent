@@ -1,16 +1,14 @@
 package com.meshcentral.agent
 
 import android.app.*
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.*
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.text.InputType
 import android.util.Base64
 import android.view.Gravity
@@ -19,7 +17,9 @@ import android.view.MenuItem
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.preference.PreferenceManager
 import com.google.firebase.iid.FirebaseInstanceId
+import okio.ByteString.Companion.toByteString
 import org.spongycastle.asn1.x500.X500Name
 import org.spongycastle.cert.X509v3CertificateBuilder
 import org.spongycastle.cert.jcajce.JcaX509CertificateConverter
@@ -27,6 +27,7 @@ import org.spongycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.spongycastle.jce.provider.BouncyCastleProvider
 import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
 import java.io.ByteArrayInputStream
+import java.lang.Exception
 import java.math.BigInteger
 import java.security.*
 import java.security.cert.CertificateFactory
@@ -34,6 +35,7 @@ import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.*
 import kotlin.collections.ArrayList
+import kotlin.math.absoluteValue
 
 // User interface values
 var g_mainActivity : MainActivity? = null
@@ -41,6 +43,7 @@ var mainFragment : MainFragment? = null
 var scannerFragment : ScannerFragment? = null
 var webFragment : WebViewFragment? = null
 var authFragment : AuthFragment? = null
+var settingsFragment: SettingsFragment? = null
 var visibleScreen : Int = 1
 
 // Server connection values
@@ -52,6 +55,9 @@ var pageUrl : String? = null
 var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
+var g_autoConnect : Boolean = true
+var g_userDisconnect : Boolean = false // Indicate user initiated disconnection
+var g_retryTimer: CountDownTimer? = null
 
 // Remote desktop values
 var g_ScreenCaptureService : ScreenCaptureService? = null
@@ -117,7 +123,7 @@ class MainActivity : AppCompatActivity() {
                     g_auth_url = Uri.parse(intentUrl)
                     // If not connected, connect to the server now.
                     if (meshAgent == null) {
-                        toggleAgentConnection();
+                        toggleAgentConnection(false);
                     } else {
                         // Switch to 2FA auth screen
                         if (mainFragment != null) {
@@ -132,6 +138,10 @@ class MainActivity : AppCompatActivity() {
                 startActivity(getintent);
             }
         }
+
+        // Activate the settings
+        settingsChanged()
+        if (g_autoConnect && !g_userDisconnect && (meshAgent == null)) { toggleAgentConnection(false) }
     }
 
     private fun sendConsoleMessage(msg: String) {
@@ -166,6 +176,8 @@ class MainActivity : AppCompatActivity() {
         item6.isVisible = (visibleScreen == 1) && (serverLink == null)
         var item7 = menu.findItem(R.id.action_testAuth);
         item7.isVisible = false //(visibleScreen == 1) && (serverLink != null);
+        var item8 = menu.findItem(R.id.action_settings);
+        item8.isVisible = (visibleScreen == 1)
         return true
     }
 
@@ -207,6 +219,11 @@ class MainActivity : AppCompatActivity() {
         if (item.itemId == R.id.action_testAuth) {
             // Move to authentication screen
             if (mainFragment != null) mainFragment?.moveToAuthPage()
+        }
+
+        if (item.itemId == R.id.action_settings) {
+            // Move to settings screen
+            if (mainFragment != null) mainFragment?.moveToSettingsPage()
         }
 
         return when(item.itemId) {
@@ -260,6 +277,8 @@ class MainActivity : AppCompatActivity() {
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         sharedPreferences.edit().putString("qrmsh", x).apply()
         mainFragment?.refreshInfo()
+        g_userDisconnect = false
+        if (g_autoConnect) { toggleAgentConnection(false) }
     }
 
     // Open a URL in the web view fragment
@@ -282,17 +301,21 @@ class MainActivity : AppCompatActivity() {
                 if (scannerFragment != null) scannerFragment?.exit()
             } else if (visibleScreen == 3) {
                 if (webFragment != null) webFragment?.exit()
-            }else if (visibleScreen == 4) {
+            } else if (visibleScreen == 4) {
                 if (authFragment != null) authFragment?.exit()
+            } else if (visibleScreen == 5) {
+                if (settingsFragment != null) settingsFragment?.exit()
             }
         }
     }
 
-    fun refreshInfo() {
+    fun agentStateChanged() {
         this.runOnUiThread {
             if ((meshAgent != null) && (meshAgent?.state == 0)) {
                 meshAgent = null
             }
+            if (((meshAgent != null) && (meshAgent?.state == 2)) || (g_userDisconnect) || (!g_autoConnect)) stopRetryTimer()
+            else if ((meshAgent == null) && (!g_userDisconnect) && (g_autoConnect) && (g_retryTimer == null)) startRetryTimer()
             mainFragment?.refreshInfo()
         }
     }
@@ -357,7 +380,7 @@ class MainActivity : AppCompatActivity() {
         return (meshAgent == null)
     }
 
-    fun toggleAgentConnection() {
+    fun toggleAgentConnection(userInitiated : Boolean) {
         //println("toggleAgentConnection")
         if ((meshAgent == null) && (serverLink != null)) {
             // Create and connect the agent
@@ -373,10 +396,14 @@ class MainActivity : AppCompatActivity() {
                     keyGen.initialize(2048, SecureRandom())
                     val keypair = keyGen.generateKeyPair()
 
+                    // Generate Serial Number
+                    var serial : BigInteger = BigInteger("12345678");
+                    try { serial = BigInteger.valueOf(Random().nextInt().toLong().absoluteValue) } catch (ex: Exception) {}
+
                     // Create self signed certificate
                     val builder: X509v3CertificateBuilder = JcaX509v3CertificateBuilder(
                             X500Name("CN=android.agent.meshcentral.com"), // issuer authority
-                            BigInteger.valueOf(Random().nextInt().toLong()), // serial number of certificate
+                            serial, // serial number of certificate
                             Date(System.currentTimeMillis() - 86400000L * 365), // start of validity
                             Date(253402300799000L), // end of certificate validity
                             X500Name("CN=android.agent.meshcentral.com"), // subject name of certificate
@@ -391,19 +418,41 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     //println("Loading certificates...")
                     agentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
-                            ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
+                            ByteArrayInputStream(Base64.decode(certb64 as String, Base64.DEFAULT))
                     ) as X509Certificate
-                    val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
+                    val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64 as String, Base64.DEFAULT))
                     agentCertificateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
                 }
                 //println("Cert: ${agentCertificate.toString()}")
                 //println("XKey: ${agentCertificateKey.toString()}")
             }
 
-            meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
-            meshAgent?.Start()
+            if (!userInitiated) {
+                meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+                meshAgent?.Start()
+            } else {
+                if (g_autoConnect) {
+                    if (g_userDisconnect) {
+                        // We are not trying to connect, switch to connecting
+                        g_userDisconnect = false
+                        meshAgent =
+                            MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+                        meshAgent?.Start()
+                    } else {
+                        // We are trying to connect, switch to not trying
+                        g_userDisconnect = true
+                    }
+                } else {
+                    // We are not in auto connect mode, try to connect
+                    g_userDisconnect = true
+                    meshAgent =
+                        MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+                    meshAgent?.Start()
+                }
+            }
         } else if (meshAgent != null) {
             // Stop the agent
+            if (userInitiated) { g_userDisconnect = true }
             stopProjection()
             meshAgent?.Stop()
             meshAgent = null
@@ -496,6 +545,58 @@ class MainActivity : AppCompatActivity() {
     fun stopProjection() {
         if (g_ScreenCaptureService == null) return
         startService(com.meshcentral.agent.ScreenCaptureService.getStopIntent(this))
+    }
+
+    fun settingsChanged() {
+        this.runOnUiThread {
+            val pm: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+            g_autoConnect = pm.getBoolean("pref_autoconnect", false)
+            g_userDisconnect = false
+            if (g_autoConnect == false) {
+                if (g_retryTimer != null) {
+                    stopRetryTimer()
+                    mainFragment?.refreshInfo()
+                }
+            } else {
+                if ((meshAgent == null) && (!g_userDisconnect) && (g_retryTimer == null)) {
+                    toggleAgentConnection(false)
+                }
+            }
+            println("settingsChanged, autoconnect: $g_autoConnect")
+        }
+    }
+
+    // Start the connection retry timer, try to connect the agent every 10 seconds
+    private fun startRetryTimer() {
+        this.runOnUiThread {
+            if (g_retryTimer == null) {
+                g_retryTimer = object : CountDownTimer(120000000, 10000) {
+                    override fun onTick(millisUntilFinished: Long) {
+                        println("onTick!!!")
+                        if ((meshAgent == null) && (!g_userDisconnect)) {
+                            toggleAgentConnection(false)
+                        }
+                    }
+
+                    override fun onFinish() {
+                        println("onFinish!!!")
+                        stopRetryTimer()
+                        startRetryTimer()
+                    }
+                }
+                g_retryTimer?.start()
+            }
+        }
+    }
+
+    // Stop the connection retry timer
+    private fun stopRetryTimer() {
+        this.runOnUiThread {
+            if (g_retryTimer != null) {
+                g_retryTimer?.cancel()
+                g_retryTimer = null
+            }
+        }
     }
 
     companion object {

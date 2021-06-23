@@ -2,6 +2,7 @@ package com.meshcentral.agent
 
 import android.Manifest
 import android.app.AlertDialog
+import android.content.Context
 import android.net.Uri
 import android.os.Bundle
 import androidx.fragment.app.Fragment
@@ -54,7 +55,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 }
             } else {
                 if ((activity as MainActivity).isAgentDisconnected() == false) {
-                    (activity as MainActivity).toggleAgentConnection()
+                    (activity as MainActivity).toggleAgentConnection(true)
                 } else {
                     // Perform action on the agent
                     Dexter.withContext(context)
@@ -107,6 +108,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_authFragment) }
     }
 
+    fun moveToSettingsPage() {
+        println("moveToSettingsPage $visibleScreen")
+        if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_settingsFragment) }
+    }
+
     fun refreshInfo() {
         view?.findViewById<TextView>(R.id.serverNameTextView)?.text = getServerHost(serverLink)
         if (serverLink == null) {
@@ -124,12 +130,21 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             }
             view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = true
             if ((state == 0) || (state == null)) {
-                // Disconnected
-                view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
-                view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                    getString(R.string.disconnected)
-                view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                    getString(R.string.connect)
+                if (g_retryTimer != null) {
+                    // Trying to connect
+                    view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
+                    view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
+                        getString(R.string.connecting)
+                    view?.findViewById<TextView>(R.id.agentActionButton)?.text =
+                        getString(R.string.disconnect)
+                } else {
+                    // Disconnected
+                    view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
+                    view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
+                        getString(R.string.disconnected)
+                    view?.findViewById<TextView>(R.id.agentActionButton)?.text =
+                        getString(R.string.connect)
+                }
                 if (visibleScreen == 4) { authFragment?.exit() }
             } else if (state == 1) {
                 // Connecting
@@ -153,7 +168,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
                         getString(R.string.connected)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                        getString(R.string.disconnect)
+                    getString(R.string.disconnect)
 
                 // If we are connected and 2FA was requested, switch to 2FA screen
                 if ((g_auth_url != null) && (visibleScreen != 4)) { moveToAuthPage() }
@@ -173,7 +188,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
 
     override fun onPermissionsChecked(report: MultiplePermissionsReport?) {
         println("onPermissionsChecked")
-        (activity as MainActivity).toggleAgentConnection()
+        (activity as MainActivity).toggleAgentConnection(false)
     }
 
     override fun onPermissionRationaleShouldBeShown(permissions: MutableList<PermissionRequest>?, token: PermissionToken?) {

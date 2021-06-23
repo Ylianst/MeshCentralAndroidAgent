@@ -28,6 +28,11 @@
         android:title="@string/stopsharescreen"
         app:showAsAction="never" />
     <item
+        android:id="@+id/action_settings"
+        android:orderInCategory="107"
+        android:title="@string/settings"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_close"
         android:orderInCategory="105"
         android:title="@string/close"

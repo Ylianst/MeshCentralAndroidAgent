@@ -8,7 +8,7 @@
     <fragment
         android:id="@+id/FirstFragment"
         android:name="com.meshcentral.agent.MainFragment"
-        android:label="@string/first_fragment_label"
+        android:label="Home"
         tools:layout="@layout/main_fragment" >
 
         <action
@@ -20,6 +20,9 @@
         <action
             android:id="@+id/action_FirstFragment_to_authFragment"
             app:destination="@id/authFragment" />
+        <action
+            android:id="@+id/action_FirstFragment_to_settingsFragment"
+            app:destination="@id/settingsFragment" />
     </fragment>
     <fragment
         android:id="@+id/SecondFragment"
@@ -47,6 +50,14 @@
         tools:layout="@layout/fragment_auth" >
         <action
             android:id="@+id/action_authFragment_to_FirstFragment"
+            app:destination="@id/FirstFragment" />
+    </fragment>
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.meshcentral.agent.SettingsFragment"
+        android:label="com.meshcentral.agent.SettingsFragment" >
+        <action
+            android:id="@+id/action_settingsFragment_to_FirstFragment"
             app:destination="@id/FirstFragment" />
     </fragment>
 </navigation>

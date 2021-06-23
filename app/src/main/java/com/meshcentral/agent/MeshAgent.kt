@@ -67,7 +67,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     fun UpdateState(newState: Int) {
         if (newState != state) {
             state = newState
-            parent.refreshInfo()
+            parent.agentStateChanged()
         }
     }
 
