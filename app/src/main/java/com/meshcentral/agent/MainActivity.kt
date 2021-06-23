@@ -81,13 +81,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-
         g_mainActivity = this
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         serverLink = sharedPreferences?.getString("qrmsh", null)
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        //var toolbar = g_mainActivity?.findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
         setSupportActionBar(findViewById(R.id.toolbar))
 
         // Setup notification manager
@@ -141,7 +142,9 @@ class MainActivity : AppCompatActivity() {
 
         // Activate the settings
         settingsChanged()
-        if (g_autoConnect && !g_userDisconnect && (meshAgent == null)) { toggleAgentConnection(false) }
+        if (g_autoConnect && !g_userDisconnect && (meshAgent == null)) {
+            toggleAgentConnection(false)
+        }
     }
 
     private fun sendConsoleMessage(msg: String) {
@@ -568,7 +571,6 @@ class MainActivity : AppCompatActivity() {
                     toggleAgentConnection(false)
                 }
             }
-            println("settingsChanged, autoconnect: $g_autoConnect")
         }
     }
 

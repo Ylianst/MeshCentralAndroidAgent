@@ -9,10 +9,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.*
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.karumi.dexter.Dexter
@@ -113,6 +110,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
     }
 
     fun refreshInfo() {
+        var showServerTitle : String? = null
+        var showServerLogo : Int = 0 // 0 = Default, 1 = User, 2 = Users, 3 = Custom
         view?.findViewById<TextView>(R.id.serverNameTextView)?.text = getServerHost(serverLink)
         if (serverLink == null) {
             // Server not setup
@@ -187,6 +186,9 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     } catch (ex: Exception) {}
                 }
 
+                // Set the application title
+                if (meshAgent?.serverTitle != null) { showServerTitle = meshAgent!!.serverTitle; }
+
                 // Set the title
                 var serverNameTitle : String? = getServerHost(serverLink)
                 var serverImage : Bitmap? = null
@@ -205,24 +207,83 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 } catch (ex: Exception) { }
                 view?.findViewById<TextView>(R.id.serverNameTextView)?.text = serverNameTitle
 
-                val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
+                // Setup the server image
                 if (serverImage != null) {
+                    // Display user account image
+                    val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
                     imageView?.setImageBitmap(serverImage)
                     val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams
-                    param.setMargins(128,128,128,128)
+                    param.setMargins(128, 128, 128, 128)
                     imageView?.layoutParams = param
+                    showServerLogo = 3
                 } else {
-                    imageView?.setImageResource(R.mipmap.ic_launcher_foreground)
-                    val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams
-                    param.setMargins(0,0,0,0)
-                    imageView?.layoutParams = param
-
+                    if (userSessions.size == 0) {
+                        if (meshAgent?.serverImage != null) {
+                            // Display branded server logo
+                            val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
+                            imageView?.setImageBitmap(meshAgent?.serverImage)
+                            val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams
+                            param.setMargins(128, 128, 128, 128)
+                            imageView?.layoutParams = param
+                            showServerLogo = 3
+                        }
+                    } else if (userSessions.size == 1) {
+                        // Display single user default image
+                        showServerLogo = 1
+                    } else if (userSessions.size > 1) {
+                        // Display multi user default image
+                        showServerLogo = 2
+                    }
                 }
 
                 // If we are connected and 2FA was requested, switch to 2FA screen
                 if ((g_auth_url != null) && (visibleScreen != 4)) {
                     moveToAuthPage()
                 }
+            }
+        }
+
+        // Update application title
+        var toolbar =
+            g_mainActivity?.findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
+        if (showServerTitle != null) {
+            toolbar?.title = showServerTitle
+            getActivity()?.setTitle(showServerTitle);
+            if (meshAgent?.serverSubTitle != null) { toolbar?.subtitle = meshAgent!!.serverSubTitle; }
+        } else {
+            toolbar?.title = getString(R.string.app_name)
+            toolbar?.subtitle = null
+            getActivity()?.setTitle(R.string.app_name);
+        }
+
+        if (showServerLogo == 0) {
+            // Display default MeshCentral image
+            val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
+            imageView?.setImageResource(R.mipmap.ic_launcher_foreground)
+            val param = imageView?.layoutParams
+            if (param is ViewGroup.MarginLayoutParams) {
+                (param as ViewGroup.MarginLayoutParams).setMargins(0, 0, 0, 0)
+                imageView?.layoutParams = param
+            }
+        }
+        else if (showServerLogo == 1) {
+            // Display single user default image
+            val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
+            imageView?.setImageResource(R.mipmap.ic_user)
+            val param = imageView?.layoutParams
+            if (param is ViewGroup.MarginLayoutParams) {
+                (param as ViewGroup.MarginLayoutParams).setMargins(128, 128, 128, 128)
+                imageView?.layoutParams = param
+            }
+        }
+        else if (showServerLogo == 2) {
+            // Display multi user default image
+            val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
+            imageView?.setImageResource(R.mipmap.ic_users)
+            val param = imageView?.layoutParams
+            if (param is ViewGroup.MarginLayoutParams) {
+                (param as ViewGroup.MarginLayoutParams).setMargins(128, 128, 128, 128)
+                imageView?.layoutParams = param
             }
         }
     }

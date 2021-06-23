@@ -15,6 +15,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONArray
 import org.json.JSONObject
+import org.webrtc.PeerConnectionFactory
 import java.io.*
 import java.security.MessageDigest
 import java.security.cert.CertificateException
@@ -699,5 +700,24 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 if (_webSocket != null) {_webSocket?.send(lastDirRequest?.toString()!!.toByteArray(Charsets.UTF_8).toByteString()) }
             }
         }
+    }
+
+    // WebRTC setup
+    private fun initializePeerConnectionFactory() {
+        //Initialize PeerConnectionFactory globals.
+        val initializationOptions = PeerConnectionFactory.InitializationOptions.builder(parent.parent).createInitializationOptions()
+        PeerConnectionFactory.initialize(initializationOptions)
+
+        //Create a new PeerConnectionFactory instance - using Hardware encoder and decoder.
+        val options = PeerConnectionFactory.Options()
+        //val defaultVideoEncoderFactory = DefaultVideoEncoderFactory(rootEglBase?.eglBaseContext,  /* enableIntelVp8Encoder */true,  /* enableH264HighProfile */true)
+        //val defaultVideoDecoderFactory = DefaultVideoDecoderFactory(rootEglBase?.eglBaseContext)
+        val factory = PeerConnectionFactory.builder()
+                .setOptions(options)
+                //.setVideoEncoderFactory(defaultVideoEncoderFactory)
+                //.setVideoDecoderFactory(defaultVideoDecoderFactory)
+                .createPeerConnectionFactory()
+
+        //factory.createPeerConnection()
     }
 }

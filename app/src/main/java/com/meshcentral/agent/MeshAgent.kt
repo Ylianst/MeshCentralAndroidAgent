@@ -52,6 +52,9 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     var nonce : ByteArray? = null
     var serverNonce: ByteArray? = null
     var serverTlsCertHash: ByteArray? = null
+    var serverTitle : String? = null
+    var serverSubTitle : String? = null
+    var serverImage : Bitmap? = null
     private var _webSocket: WebSocket? = null
     private var connectionState: Int = 0
     private var connectionTimer: CountDownTimer? = null
@@ -240,7 +243,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     var agentid = 14;           // This of agent (14, Android in this case)
                     var agentver = 0            // Agent version (TODO)
                     var platfromType = 3;       // This is the icon: 1 = Desktop, 2 = Laptop, 3 = Mobile, 4 = Server, 5 = Disk, 6 = Router
-                    var capabilities = 12;       // Capabilities of the agent (bitmask): 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript
+                    var capabilities = 12;      // Capabilities of the agent (bitmask): 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript
                     var deviceName = Settings.Secure.getString(parent.contentResolver, "bluetooth_name");
                     if (deviceName == null) {
                         deviceName = Settings.Global.getString(parent.contentResolver, Settings.Global.DEVICE_NAME)
@@ -300,6 +303,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         startConnectionTimer()
         sendCoreInfo()
         sendNetworkUpdate(false)
+        sendServerImageRequest()
 
         // Send battery state
         if (_webSocket != null) { _webSocket?.send(getSysBatteryInfo().toString().toByteArray().toByteString()) }
@@ -476,6 +480,27 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     // Notify of user information change
                     parent.refreshInfo()
                 }
+                "getServerImage" -> {
+                    // Server title and image
+                    serverTitle = json.optString("title")
+                    serverSubTitle = json.optString("subtitle")
+                    var ximage: String? = json.optString("image")
+                    if ((ximage != null) && (!ximage.startsWith("data:image/jpeg;base64,"))) { ximage = null; }
+
+                    // Decode the image
+                    if (ximage != null) {
+                        try {
+                            val imageBytes = android.util.Base64.decode(ximage.substring(23), 0)
+                            serverImage =
+                                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                        } catch (ex: java.lang.Exception) { }
+                    }
+
+                    // Notify of user information change
+                    if ((serverTitle != null) || (serverImage != null)) {
+                        parent.refreshInfo()
+                    }
+                }
                 else -> {
                     // Unknown command, ignore it.
                     println("Unhandled action: $action")
@@ -508,7 +533,6 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
     // Request user image and real name if needed
     fun sendUserImageRequest(userid: String) {
-        println("sendUserImageRequest*****")
         if (userinfo.containsKey(userid)) {
             parent.refreshInfo()
             return
@@ -517,10 +541,19 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             val r = JSONObject()
             r.put("action", "getUserImage")
             r.put("userid", userid)
-            println("Requesting user image: $userid")
             if (_webSocket != null) {
                 _webSocket?.send(r.toString().toByteArray().toByteString())
             }
+        }
+    }
+
+    // Request user image and real name if needed
+    fun sendServerImageRequest() {
+        val r = JSONObject()
+        r.put("action", "getServerImage")
+        r.put("agent", "android")
+        if (_webSocket != null) {
+            _webSocket?.send(r.toString().toByteArray().toByteString())
         }
     }
 

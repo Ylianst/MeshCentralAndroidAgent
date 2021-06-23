@@ -50,7 +50,7 @@
         android:layout_height="311dp"
         android:layout_marginStart="16dp"
         android:alpha=".5"
-        android:scaleType="centerCrop"
+        android:scaleType="fitCenter"
         android:src="@mipmap/ic_launcher_foreground"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
