@@ -15,7 +15,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONArray
 import org.json.JSONObject
-import org.webrtc.PeerConnectionFactory
+//import org.webrtc.PeerConnectionFactory
 import java.io.*
 import java.security.MessageDigest
 import java.security.cert.CertificateException
@@ -703,6 +703,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     // WebRTC setup
+    /*
     private fun initializePeerConnectionFactory() {
         //Initialize PeerConnectionFactory globals.
         val initializationOptions = PeerConnectionFactory.InitializationOptions.builder(parent.parent).createInitializationOptions()
@@ -720,4 +721,6 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
 
         //factory.createPeerConnection()
     }
+    */
+
 }

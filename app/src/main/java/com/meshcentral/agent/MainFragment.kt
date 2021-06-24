@@ -266,7 +266,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 imageView?.layoutParams = param
             }
         }
-        else if (showServerLogo == 1) {
+        else if ((showServerLogo == 1) && (showServerLogo == 2)) {
             // Display single user default image
             val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
             imageView?.setImageResource(R.mipmap.ic_user)
@@ -276,6 +276,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 imageView?.layoutParams = param
             }
         }
+        /*
         else if (showServerLogo == 2) {
             // Display multi user default image
             val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
@@ -286,6 +287,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 imageView?.layoutParams = param
             }
         }
+        */
     }
 
     fun getServerHost(serverLink: String?) : String? {
