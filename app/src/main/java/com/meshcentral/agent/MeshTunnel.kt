@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.CountDownTimer
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Base64
 import okhttp3.*
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -17,6 +18,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 //import org.webrtc.PeerConnectionFactory
 import java.io.*
+import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
@@ -56,6 +58,9 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     private var fileUploadReqId : Int = 0
     private var fileUploadSize : Int = 0
     var userid : String? = null
+    var guestname : String? = null
+    var sessionUserName : String? = null // UserID + GuestName in Base64 if this is a shared session.
+    var sessionUserName2 : String? = null // UserID/GuestName
 
     init { }
 
@@ -69,13 +74,22 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         //var tunnelUser = serverData.getString("username")
 
         // Set the userid and request more data about this user
+        guestname = serverData.optString("guestname")
         userid = serverData.optString("userid")
         if (userid != null) parent.sendUserImageRequest(userid!!)
+        sessionUserName = userid
+        sessionUserName2 = userid
+        if ((userid != "") && (guestname != "")) {
+            sessionUserName = userid + "/guest:" + Base64.encodeToString(guestname!!.toByteArray(), Base64.NO_WRAP)
+            sessionUserName2 = "$userid/$guestname"
+        }
 
         //println("Starting tunnel: $url")
         //println("Tunnel usage: $tunnelUsage")
         //println("Tunnel user: $tunnelUser")
         //println("Tunnel userid: $userid")
+        //println("Tunnel sessionUserName: $sessionUserName")
+        //println("Tunnel sessionUserName2: $sessionUserName2")
         startSocket()
     }
 

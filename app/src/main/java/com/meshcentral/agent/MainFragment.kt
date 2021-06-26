@@ -180,8 +180,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 val userSessions : ArrayList<String> = ArrayList()
                 for (tunnel in meshAgent!!.tunnels) {
                     try {
-                        if ((tunnel.userid != null) && (!userSessions.contains(tunnel!!.userid))) {
-                            userSessions.add(tunnel!!.userid!!)
+                        if ((tunnel.sessionUserName2 != null) && (!userSessions.contains(tunnel!!.sessionUserName2))) {
+                            userSessions.add(tunnel!!.sessionUserName2!!)
                         }
                     } catch (ex: Exception) {}
                 }
@@ -196,12 +196,15 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     if (userSessions.size > 1) {
                         serverNameTitle = "${userSessions.size} users have sessions."
                     } else if (userSessions.size == 1) {
-                        val userid: String = userSessions[0];
+                        val useridsplit: List<String> = userSessions[0].split("/");
+                        val userid = useridsplit[0] + "/" + useridsplit[1] + "/" + useridsplit[2]
+                        var guestname : String = ""
+                        if (useridsplit.size == 4)  { guestname = " - " + useridsplit[3] }
                         serverImage = meshAgent!!.userinfo[userid]!!.image
                         if (meshAgent!!.userinfo[userid]!!.realname != null) {
-                            serverNameTitle = meshAgent!!.userinfo[userid]!!.realname;
+                            serverNameTitle = meshAgent!!.userinfo[userid]!!.realname + guestname
                         } else {
-                            serverNameTitle = userid.split("/")[2]
+                            serverNameTitle = userid.split("/")[2] + guestname
                         }
                     }
                 } catch (ex: Exception) { }
@@ -266,7 +269,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 imageView?.layoutParams = param
             }
         }
-        else if ((showServerLogo == 1) && (showServerLogo == 2)) {
+        else if ((showServerLogo == 1) || (showServerLogo == 2)) {
             // Display single user default image
             val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
             imageView?.setImageResource(R.mipmap.ic_user)
