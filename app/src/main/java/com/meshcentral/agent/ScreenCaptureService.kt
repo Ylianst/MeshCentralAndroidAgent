@@ -221,7 +221,17 @@ class ScreenCaptureService : Service() {
         dos.writeShort(0) // Image command size, 0 since jumbo is used
         dos.writeShort(x) // X
         dos.writeShort(y) // Y
-        cropedBitmap!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+        if (g_desktop_imageType == 4) { // WebP
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                cropedBitmap!!.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
+            } else {
+                cropedBitmap!!.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
+            }
+        } else if (g_desktop_imageType == 2) { // PNG
+            cropedBitmap!!.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
+        } else { // JPEG (Default)
+            cropedBitmap!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+        }
         cropedBitmap.recycle()
         var data = bytesOut.toByteArray()
         var cmdSize : Int = (data.size - 8)
@@ -243,7 +253,17 @@ class ScreenCaptureService : Service() {
         dos.writeShort(0) // Image command size, 0 since jumbo is used
         dos.writeShort(0) // X
         dos.writeShort(0) // Y
-        bm!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+        if (g_desktop_imageType == 4) { // WebP
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                bm!!.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
+            } else {
+                bm!!.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
+            }
+        } else if (g_desktop_imageType == 2) { // PNG
+            bm!!.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
+        } else { // JPEG (Default)
+            bm!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+        }
         var data = bytesOut.toByteArray()
         var cmdSize : Int = (data.size - 8)
         data[4] = (cmdSize shr 24).toByte()

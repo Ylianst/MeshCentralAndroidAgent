@@ -301,9 +301,9 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             }
             5 -> { // Remote Desktop Settings
                 if (cmdsize < 6) return
-                g_desktop_imageType = msg[4].toInt()
-                g_desktop_compressionLevel = msg[5].toInt()
-                if (cmdsize >= 8) { g_desktop_scalingLevel = (msg[6].toInt() shl 8).absoluteValue + msg[7].toInt().absoluteValue }
+                g_desktop_imageType = msg[4].toInt() // 1 = JPEG, 2 = PNG, 3 = TIFF, 4 = WebP. TIFF is not support on Android.
+                g_desktop_compressionLevel = msg[5].toInt() // Value from 1 to 100
+                if (cmdsize >= 8) { g_desktop_scalingLevel = (msg[6].toInt() shl 8).absoluteValue + msg[7].toInt().absoluteValue } // 1024 = 100%
                 if (cmdsize >= 10) { g_desktop_frameRateLimiter = (msg[8].toInt() shl 8).absoluteValue + msg[9].toInt().absoluteValue }
                 println("Desktop Settings, type=$g_desktop_imageType, comp=$g_desktop_compressionLevel, scale=$g_desktop_scalingLevel, rate=$g_desktop_frameRateLimiter")
                 updateDesktopDisplaySize()
@@ -312,7 +312,13 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 // Nop
                 println("Desktop Refresh")
             }
+            8 -> { // Pause
+                // Nop
+            }
             85 -> { // Unicode key input
+                // Nop
+            }
+            87 -> { // Input Lock
                 // Nop
             }
             else -> {
