@@ -73,7 +73,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
             }
         } else if (remoteMessage.notification != null) {
             if (g_mainActivity != null) {
-                println("Showing notification with URL: " + url);
+                println("Showing notification with URL: $url");
                 g_mainActivity?.showNotification(remoteMessage.notification?.title, remoteMessage.notification?.body, url)
             }
         } else if (remoteMessage.data != null) {
@@ -89,7 +89,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
         val fm = FirebaseMessaging.getInstance()
 
         var m = RemoteMessage.Builder("${to}@gcm.googleapis.com")
-        m.setMessageId(Integer.toString(msgId.incrementAndGet()))
+        m.setMessageId(msgId.incrementAndGet().toString())
         m.addData("con", cmd)
         m.addData("s", session)
         if (relayId != null) { m.addData("r", relayId) }

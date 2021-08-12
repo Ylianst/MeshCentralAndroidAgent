@@ -109,6 +109,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_settingsFragment) }
     }
 
+    private fun getStringEx(resId: Int) : String {
+        try { return getString(resId); } catch (ex: Exception) {}
+        return "";
+    }
+
     fun refreshInfo() {
         var showServerTitle : String? = null
         var showServerLogo : Int = 0 // 0 = Default, 1 = User, 2 = Users, 3 = Custom
@@ -116,8 +121,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         if (serverLink == null) {
             // Server not setup
             view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.4F
-            view?.findViewById<TextView>(R.id.agentStatusTextview)?.text = getString(R.string.no_server_setup)
-            view?.findViewById<TextView>(R.id.agentActionButton)?.text = getString(R.string.setup_server)
+            view?.findViewById<TextView>(R.id.agentStatusTextview)?.text = getStringEx(R.string.no_server_setup)
+            view?.findViewById<TextView>(R.id.agentActionButton)?.text = getStringEx(R.string.setup_server)
             //view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = cameraPresent
             if (visibleScreen == 4) {
                 authFragment?.exit()
@@ -134,16 +139,16 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     // Trying to connect
                     view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                     view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                            getString(R.string.connecting)
+                            getStringEx(R.string.connecting)
                     view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                            getString(R.string.disconnect)
+                            getStringEx(R.string.disconnect)
                 } else {
                     // Disconnected
                     view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                     view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                            getString(R.string.disconnected)
+                            getStringEx(R.string.disconnected)
                     view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                            getString(R.string.connect)
+                            getStringEx(R.string.connect)
                 }
                 if (visibleScreen == 4) {
                     authFragment?.exit()
@@ -152,9 +157,9 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 // Connecting
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                 view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                        getString(R.string.connecting)
+                        getStringEx(R.string.connecting)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                        getString(R.string.disconnect)
+                        getStringEx(R.string.disconnect)
                 if (visibleScreen == 4) {
                     authFragment?.exit()
                 }
@@ -162,9 +167,9 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 // Verifying
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                 view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                        getString(R.string.authenticating)
+                        getStringEx(R.string.authenticating)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                        getString(R.string.disconnect)
+                        getStringEx(R.string.disconnect)
                 if (visibleScreen == 4) {
                     authFragment?.exit()
                 }
@@ -172,9 +177,9 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 // Connected
                 view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 1.0F
                 view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =
-                        getString(R.string.connected)
+                        getStringEx(R.string.connected)
                 view?.findViewById<TextView>(R.id.agentActionButton)?.text =
-                        getString(R.string.disconnect)
+                        getStringEx(R.string.disconnect)
 
                 // Get a list of userid's with active tunnels
                 val userSessions : ArrayList<String> = ArrayList()
@@ -224,10 +229,16 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                         if (meshAgent?.serverImage != null) {
                             // Display branded server logo
                             val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
-                            imageView?.setImageBitmap(meshAgent?.serverImage)
-                            val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams
-                            param.setMargins(128, 128, 128, 128)
-                            imageView?.layoutParams = param
+                            if (imageView != null) {
+                                imageView?.setImageBitmap(meshAgent?.serverImage)
+                                try {
+                                    val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams?
+                                    if (param != null) {
+                                        param?.setMargins(128, 128, 128, 128)
+                                        imageView?.layoutParams = param
+                                    }
+                                } catch (ex: Exception) {}
+                            }
                             showServerLogo = 3
                         }
                     } else if (userSessions.size == 1) {
@@ -254,7 +265,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             getActivity()?.setTitle(showServerTitle);
             if (meshAgent?.serverSubTitle != null) { toolbar?.subtitle = meshAgent!!.serverSubTitle; }
         } else {
-            toolbar?.title = getString(R.string.app_name)
+            toolbar?.title = getStringEx(R.string.app_name)
             toolbar?.subtitle = null
             getActivity()?.setTitle(R.string.app_name);
         }

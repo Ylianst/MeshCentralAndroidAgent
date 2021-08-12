@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.navigation.fragment.findNavController
+import java.lang.Exception
 
 class AuthFragment : Fragment() {
     var countDownTimer : CountDownTimer? = null
@@ -77,6 +78,8 @@ class AuthFragment : Fragment() {
             countDownTimer?.cancel()
             countDownTimer = null
         }
-        findNavController().navigate(R.id.action_authFragment_to_FirstFragment)
+        try {
+            findNavController().navigate(R.id.action_authFragment_to_FirstFragment)
+        } catch (ex: Exception) {}
     }
 }
