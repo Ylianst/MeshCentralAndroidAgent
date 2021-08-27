@@ -37,6 +37,12 @@ import java.util.*
 import kotlin.collections.ArrayList
 import kotlin.math.absoluteValue
 
+// You can hardcode a server connection string into this application by setting this string.
+// Make sure to replace all $ with \$ if your link string contains the $ character
+// Once set, the resulting APK will be hard coded and users can't unset this value.
+val hardCodedServerLink : String? = null
+//val hardCodedServerLink : String? = "mc://central.mesh.meshcentral.com,2ZNi1e2Lrqi\$nnQ7NLJCJWNwxGD9ZstiNzxs\$LIE1tcHQD45bPDvbcKzpC9zUTX9,7b4b43cdad850135f36ab31124b52e47c167fba055ce800267a4dc89fe0e581c"
+
 // User interface values
 var g_mainActivity : MainActivity? = null
 var mainFragment : MainFragment? = null
@@ -83,7 +89,13 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         g_mainActivity = this
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
-        serverLink = sharedPreferences?.getString("qrmsh", null)
+        if (hardCodedServerLink != null) {
+            // Use the hard coded server link
+            serverLink = hardCodedServerLink
+        } else {
+            // Use the configurable server link
+            serverLink = sharedPreferences?.getString("qrmsh", null)
+        }
 
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -165,10 +177,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         var item1 = menu.findItem(R.id.action_setup_server);
-        item1.isVisible = (visibleScreen == 1);
+        item1.isVisible = (visibleScreen == 1) && (hardCodedServerLink == null);
         item1.isEnabled = cameraPresent;
         var item2 = menu.findItem(R.id.action_clear_server);
-        item2.isVisible = (visibleScreen == 1) && (serverLink != null);
+        item2.isVisible = (visibleScreen == 1) && (serverLink != null) && (hardCodedServerLink == null);
         var item3 = menu.findItem(R.id.action_close);
         item3.isVisible = (visibleScreen != 1);
         var item4 = menu.findItem(R.id.action_sharescreen);
@@ -176,7 +188,7 @@ class MainActivity : AppCompatActivity() {
         var item5 = menu.findItem(R.id.action_stopscreensharing);
         item5.isVisible = (g_ScreenCaptureService != null)
         var item6 = menu.findItem(R.id.action_manual_setup_server);
-        item6.isVisible = (visibleScreen == 1) && (serverLink == null)
+        item6.isVisible = (visibleScreen == 1) && (serverLink == null) && (hardCodedServerLink == null)
         var item7 = menu.findItem(R.id.action_testAuth);
         item7.isVisible = false //(visibleScreen == 1) && (serverLink != null);
         var item8 = menu.findItem(R.id.action_settings);
@@ -189,12 +201,12 @@ class MainActivity : AppCompatActivity() {
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
 
-        if (item.itemId == R.id.action_setup_server) {
+        if ((item.itemId == R.id.action_setup_server) && (hardCodedServerLink == null)) {
             // Move to QR code reader if a camera is present
             if ((mainFragment != null) && cameraPresent) mainFragment?.moveToScanner()
         }
 
-        if (item.itemId == R.id.action_clear_server) {
+        if ((item.itemId == R.id.action_clear_server) && (hardCodedServerLink == null)) {
             // Remove the server
             confirmServerClear()
         }
@@ -214,7 +226,7 @@ class MainActivity : AppCompatActivity() {
             stopProjection()
         }
 
-        if (item.itemId == R.id.action_manual_setup_server) {
+        if ((item.itemId == R.id.action_manual_setup_server) && (hardCodedServerLink == null)) {
             // Manually setup the server pairing
             promptForServerLink()
         }
@@ -271,7 +283,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun setMeshServerLink(x: String?) {
-        if (serverLink == x) return
+        if ((serverLink == x) || (hardCodedServerLink != null)) return
         if (meshAgent != null) { // Stop the agent
             meshAgent?.Stop()
             meshAgent = null
@@ -330,6 +342,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun confirmServerClear() {
+        if (hardCodedServerLink != null) return
         if (alert != null) {
             alert?.dismiss()
             alert = null
@@ -508,6 +521,7 @@ class MainActivity : AppCompatActivity() {
 
     // Show alert asking for server pairing link
     fun promptForServerLink() {
+        if (hardCodedServerLink != null) return
         val builder: AlertDialog.Builder = AlertDialog.Builder(this)
         builder.setTitle("Server Pairing Link")
 
