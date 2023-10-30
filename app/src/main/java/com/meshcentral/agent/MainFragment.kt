@@ -134,7 +134,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 state = meshAgent!!.state;
             }
             view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = true
-            if ((state == 0) || (state == null)) {
+            if (state == 0) {
                 if (g_retryTimer != null) {
                     // Trying to connect
                     view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
@@ -185,8 +185,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 val userSessions : ArrayList<String> = ArrayList()
                 for (tunnel in meshAgent!!.tunnels) {
                     try {
-                        if ((tunnel.sessionUserName2 != null) && (!userSessions.contains(tunnel!!.sessionUserName2))) {
-                            userSessions.add(tunnel!!.sessionUserName2!!)
+                        if ((tunnel.sessionUserName2 != null) && (!userSessions.contains(tunnel.sessionUserName2))) {
+                            userSessions.add(tunnel.sessionUserName2!!)
                         }
                     } catch (ex: Exception) {}
                 }
@@ -222,7 +222,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                     imageView?.setImageBitmap(serverImage)
                     val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams
                     param.setMargins(128, 128, 128, 128)
-                    imageView?.layoutParams = param
+                    imageView.layoutParams = param
                     showServerLogo = 3
                 } else {
                     if (userSessions.size == 0) {
@@ -230,12 +230,12 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                             // Display branded server logo
                             val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
                             if (imageView != null) {
-                                imageView?.setImageBitmap(meshAgent?.serverImage)
+                                imageView.setImageBitmap(meshAgent?.serverImage)
                                 try {
-                                    val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams?
+                                    val param = imageView.layoutParams as ViewGroup.MarginLayoutParams?
                                     if (param != null) {
-                                        param?.setMargins(128, 128, 128, 128)
-                                        imageView?.layoutParams = param
+                                        param.setMargins(128, 128, 128, 128)
+                                        imageView.layoutParams = param
                                     }
                                 } catch (ex: Exception) {}
                             }
@@ -276,8 +276,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             imageView?.setImageResource(R.mipmap.ic_launcher_foreground)
             val param = imageView?.layoutParams
             if (param is ViewGroup.MarginLayoutParams) {
-                (param as ViewGroup.MarginLayoutParams).setMargins(0, 0, 0, 0)
-                imageView?.layoutParams = param
+                (param).setMargins(0, 0, 0, 0)
+                imageView.layoutParams = param
             }
         }
         else if ((showServerLogo == 1) || (showServerLogo == 2)) {
@@ -286,8 +286,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             imageView?.setImageResource(R.mipmap.ic_user)
             val param = imageView?.layoutParams
             if (param is ViewGroup.MarginLayoutParams) {
-                (param as ViewGroup.MarginLayoutParams).setMargins(128, 128, 128, 128)
-                imageView?.layoutParams = param
+                (param).setMargins(128, 128, 128, 128)
+                imageView.layoutParams = param
             }
         }
         /*

@@ -1,5 +1,6 @@
 package com.meshcentral.agent
 
+//import com.google.firebase.iid.FirebaseInstanceId
 import android.app.*
 import android.content.*
 import android.content.pm.PackageManager
@@ -18,8 +19,8 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
-import com.google.firebase.iid.FirebaseInstanceId
-import okio.ByteString.Companion.toByteString
+import com.google.firebase.installations.FirebaseInstallations
+import com.google.firebase.messaging.FirebaseMessaging
 import org.spongycastle.asn1.x500.X500Name
 import org.spongycastle.cert.X509v3CertificateBuilder
 import org.spongycastle.cert.jcajce.JcaX509CertificateConverter
@@ -27,15 +28,14 @@ import org.spongycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.spongycastle.jce.provider.BouncyCastleProvider
 import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
 import java.io.ByteArrayInputStream
-import java.lang.Exception
 import java.math.BigInteger
 import java.security.*
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.*
-import kotlin.collections.ArrayList
 import kotlin.math.absoluteValue
+
 
 // User interface values
 var g_mainActivity : MainActivity? = null
@@ -104,20 +104,26 @@ class MainActivity : AppCompatActivity() {
         // Check if this device has a camera
         cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)
 
-        // Setup push notifications
-        //println("Asking for token")
+        //val fcmId = FirebaseInstallations.getInstance().id
+        val fcmToken = FirebaseMessaging.getInstance().token
+        fcmToken.addOnSuccessListener(this) { tokenString ->
+            pushMessagingToken = tokenString
+        }
+
+        /*
         FirebaseInstanceId.getInstance().instanceId.addOnSuccessListener(this
         ) { instanceIdResult ->
             pushMessagingToken = instanceIdResult.token
             //println("messagingToken: $pushMessagingToken")
         }
+        */
 
         // See if we there open by a notification with a URL
         var intentUrl : String? = intent.getStringExtra("url")
         //println("Main Activity Create URL: $intentUrl")
         if (intentUrl != null) {
             intent.removeExtra("url")
-            if (intentUrl.toLowerCase().startsWith("2fa://")) {
+            if (intentUrl.lowercase().startsWith("2fa://")) {
                 // if there is no server link, ignore this
                 if (serverLink != null) {
                     // This activity was created by a 2FA message
@@ -133,7 +139,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                 }
-            } else if (intentUrl.toLowerCase().startsWith("http://") || intentUrl.toLowerCase().startsWith("https://")) {
+            } else if (intentUrl.lowercase().startsWith("http://") || intentUrl.lowercase().startsWith("https://")) {
                 // Open an HTTP or HTTPS URL.
                 var getintent: Intent = Intent(Intent.ACTION_VIEW, Uri.parse(intentUrl));
                 startActivity(getintent);
@@ -353,7 +359,7 @@ class MainActivity : AppCompatActivity() {
             val builder = AlertDialog.Builder(this)
             builder.setTitle(title)
             builder.setMessage(msg)
-            builder.setPositiveButton(android.R.string.ok) { _, _ -> {} }
+            builder.setPositiveButton(android.R.string.ok) { _, _ -> run {} }
             alert = builder.show()
         }
     }
@@ -427,9 +433,9 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     //println("Loading certificates...")
                     agentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
-                            ByteArrayInputStream(Base64.decode(certb64 as String, Base64.DEFAULT))
+                            ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
                     ) as X509Certificate
-                    val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64 as String, Base64.DEFAULT))
+                    val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
                     agentCertificateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
                 }
                 //println("Cert: ${agentCertificate.toString()}")
@@ -474,7 +480,7 @@ class MainActivity : AppCompatActivity() {
 
         val intent = Intent(this, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        if (url != null) { intent.putExtra("url", url!!); }
+        if (url != null) { intent.putExtra("url", url); }
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -526,7 +532,7 @@ class MainActivity : AppCompatActivity() {
                 indicateInvalidLink()
             }
         }
-        builder.setNegativeButton(android.R.string.cancel) { dialog, which -> dialog.cancel() }
+        builder.setNegativeButton(android.R.string.cancel) { dialog, _ -> dialog.cancel() }
         builder.show()
     }
 
@@ -536,7 +542,7 @@ class MainActivity : AppCompatActivity() {
         builder.setTitle("Invalid Server Pairing Link")
 
         // Set up the buttons
-        builder.setPositiveButton(android.R.string.ok) { dialog, which -> dialog.cancel() }
+        builder.setPositiveButton(android.R.string.ok) { dialog, _ -> dialog.cancel() }
         builder.show()
     }
 

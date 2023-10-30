@@ -67,9 +67,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     fun Start() {
         //println("MeshTunnel Init: ${serverData.toString()}")
         var serverTlsCertHashHex = serverData.optString("servertlshash")
-        if (serverTlsCertHashHex != null) { serverTlsCertHash = parent.hexToByteArray(
-                serverTlsCertHashHex
-        ) }
+        serverTlsCertHash = parent.hexToByteArray(serverTlsCertHashHex)
         //var tunnelUsage = serverData.getInt("usage")
         //var tunnelUser = serverData.getString("username")
 
@@ -399,9 +397,9 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             }
             "upload" -> {
                 // {"action":"upload","reqid":0,"path":"Images","name":"00000000.JPG","size":1180231}
-                val path = json.getString("path")
+                //val path = json.getString("path")
                 val name = json.getString("name")
-                val size = json.getInt("size")
+                //val size = json.getInt("size")
                 val reqid = json.getInt("reqid")
 
                 // Close previous upload
@@ -420,27 +418,27 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     val resolver: ContentResolver = parent.parent.getContentResolver()
                     val contentValues = ContentValues()
                     contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                    if (name.toLowerCase().endsWith(".jpg") || name.toLowerCase().endsWith(".jpeg")) {
+                    if (name.lowercase().endsWith(".jpg") || name.lowercase().endsWith(".jpeg")) {
                         contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpg")
                         contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
                     }
-                    if (name.toLowerCase().endsWith(".png")) {
+                    if (name.lowercase().endsWith(".png")) {
                         contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
                         contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
                     }
-                    if (name.toLowerCase().endsWith(".bmp")) {
+                    if (name.lowercase().endsWith(".bmp")) {
                         contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/bmp")
                         contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
                     }
-                    if (name.toLowerCase().endsWith(".mp4")) {
+                    if (name.lowercase().endsWith(".mp4")) {
                         contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
                         contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES)
                     }
-                    if (name.toLowerCase().endsWith(".mp3")) {
+                    if (name.lowercase().endsWith(".mp3")) {
                         contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpeg3")
                         contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
                     }
-                    if (name.toLowerCase().endsWith(".ogg")) {
+                    if (name.lowercase().endsWith(".ogg")) {
                         contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "audio/ogg")
                         contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
                     }
@@ -716,7 +714,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         if (success && (lastDirRequest != null)) {
             val path = lastDirRequest?.getString("path")
             if ((path != null) && (path != "")) {
-                lastDirRequest?.put("dir", getFolder(path!!))
+                lastDirRequest?.put("dir", getFolder(path))
                 if (_webSocket != null) {_webSocket?.send(lastDirRequest?.toString()!!.toByteArray(Charsets.UTF_8).toByteString()) }
             }
         }

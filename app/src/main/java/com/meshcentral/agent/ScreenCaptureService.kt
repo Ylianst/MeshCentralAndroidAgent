@@ -88,14 +88,14 @@ class ScreenCaptureService : Service() {
 
                     // Setup or update the CRC buffer and tile information.
                     val wt = (bitmap!!.width / 64)
-                    val ht = (bitmap!!.height / 64)
+                    val ht = (bitmap.height / 64)
                     if ((tilesFullWide != wt) || (tilesFullHigh != ht)) {
                         tilesWide = wt;
                         tilesHigh = ht;
                         tilesFullWide = tilesWide
                         tilesFullHigh = tilesHigh
-                        tilesRemainingWidth = (bitmap!!.width % 64);
-                        tilesRemainingHeight = (bitmap!!.height % 64);
+                        tilesRemainingWidth = (bitmap.width % 64);
+                        tilesRemainingHeight = (bitmap.height % 64);
                         if (tilesRemainingWidth != 0) { tilesWide++; }
                         if (tilesRemainingHeight != 0) { tilesHigh++; }
                         tilesCount = (tilesWide * tilesHigh);
@@ -114,7 +114,7 @@ class ScreenCaptureService : Service() {
                         // If 85% of the all tiles have changed, send the entire screen
                         if ((changedTiles * 100) >= (tilesCount * 85))
                         {
-                            sendEntireImage(bitmap!!)
+                            sendEntireImage(bitmap)
                             for (i in 0 until tilesCount) { oldcrcs!![i] = newcrcs!![i]; }
                         }
                         else
@@ -148,8 +148,8 @@ class ScreenCaptureService : Service() {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            if (bitmap != null) { bitmap!!.recycle() }
-            if (image != null) { image!!.close() }
+            if (bitmap != null) { bitmap.recycle() }
+            if (image != null) { image.close() }
         }
     }
 
@@ -223,14 +223,14 @@ class ScreenCaptureService : Service() {
         dos.writeShort(y) // Y
         if (g_desktop_imageType == 4) { // WebP
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                cropedBitmap!!.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
+                cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
             } else {
-                cropedBitmap!!.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
+                cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
             }
         } else if (g_desktop_imageType == 2) { // PNG
-            cropedBitmap!!.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
+            cropedBitmap.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
         } else { // JPEG (Default)
-            cropedBitmap!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+            cropedBitmap.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
         }
         cropedBitmap.recycle()
         var data = bytesOut.toByteArray()
@@ -255,14 +255,14 @@ class ScreenCaptureService : Service() {
         dos.writeShort(0) // Y
         if (g_desktop_imageType == 4) { // WebP
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                bm!!.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
+                bm.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
             } else {
-                bm!!.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
+                bm.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
             }
         } else if (g_desktop_imageType == 2) { // PNG
-            bm!!.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
+            bm.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
         } else { // JPEG (Default)
-            bm!!.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+            bm.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
         }
         var data = bytesOut.toByteArray()
         var cmdSize : Int = (data.size - 8)
@@ -311,7 +311,7 @@ class ScreenCaptureService : Service() {
                         }
                     }
                 }
-                rotationTimer?.start()
+                rotationTimer.start()
             }
         }
     }
@@ -470,7 +470,7 @@ class ScreenCaptureService : Service() {
         }
 
         private val virtualDisplayFlags: Int
-            private get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
+        private get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
     }
 
     fun updateTunnelDisplaySize() {
