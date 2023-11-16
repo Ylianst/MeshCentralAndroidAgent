@@ -244,9 +244,12 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     var agentver = 0            // Agent version (TODO)
                     var platfromType = 3;       // This is the icon: 1 = Desktop, 2 = Laptop, 3 = Mobile, 4 = Server, 5 = Disk, 6 = Router
                     var capabilities = 12;      // Capabilities of the agent (bitmask): 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript
-                    var deviceName = Settings.Secure.getString(parent.contentResolver, "bluetooth_name");
+                    var deviceName: String? = null;
+                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S) {
+                       deviceName = Settings.Secure.getString(parent.contentResolver, "bluetooth_name");
+                    }
                     if (deviceName == null) {
-                        deviceName = Settings.Global.getString(parent.contentResolver, Settings.Global.DEVICE_NAME)
+                        deviceName = Settings.Global.getString(parent.contentResolver, Settings.Global.DEVICE_NAME) ?: "UNKNOWN_DEVICE_NAME";
                     }
                     val deviceNameUtf = deviceName.toByteArray(Charsets.UTF_8)
                     //println("DeviceName: ${deviceName}")
