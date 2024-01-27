@@ -394,8 +394,6 @@ class ScreenCaptureService : Service() {
                     mOrientationChangeCallback!!.enable()
                 }
 
-                // Register media projection stop callback
-                mMediaProjection!!.registerCallback(this.MediaProjectionStopCallback(), mHandler)
                 g_ScreenCaptureService = this
                 updateTunnelDisplaySize()
                 sendAgentConsole("Started display sharing")
@@ -432,6 +430,8 @@ class ScreenCaptureService : Service() {
 
         // Start capture reader
         mImageReader = ImageReader.newInstance(mWidth, mHeight, PixelFormat.RGBA_8888, 2)
+        // Register media projection stop callback
+        mMediaProjection!!.registerCallback(this.MediaProjectionStopCallback(), mHandler)
         mVirtualDisplay = mMediaProjection!!.createVirtualDisplay(ScreenCaptureService.Companion.SCREENCAP_NAME, mWidth, mHeight,
                 mDensity, ScreenCaptureService.Companion.virtualDisplayFlags, mImageReader!!.surface, null, mHandler)
 
