@@ -17,6 +17,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.widget.EditText
 import android.widget.Toast
+import android.provider.Settings
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 import com.google.firebase.installations.FirebaseInstallations
@@ -197,7 +198,9 @@ class MainActivity : AppCompatActivity() {
         var item7 = menu.findItem(R.id.action_testAuth);
         item7.isVisible = false //(visibleScreen == 1) && (serverLink != null);
         var item8 = menu.findItem(R.id.action_settings);
-        item8.isVisible = (visibleScreen == 1)
+        item8.isVisible = (visibleScreen == 1);
+        var item9 = menu.findItem(R.id.action_enablepushauthentication);
+        item9.isVisible = (notificationManager.areNotificationsEnabled() == false);
         return true
     }
 
@@ -244,6 +247,13 @@ class MainActivity : AppCompatActivity() {
         if (item.itemId == R.id.action_settings) {
             // Move to settings screen
             if (mainFragment != null) mainFragment?.moveToSettingsPage()
+        }
+
+        if (item.itemId == R.id.action_enablepushauthentication) {
+            // Ask to Enable Push Notifications for Push Authentication
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            startActivity(intent)
         }
 
         return when(item.itemId) {
