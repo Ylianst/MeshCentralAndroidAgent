@@ -200,7 +200,11 @@ class MainActivity : AppCompatActivity() {
         var item8 = menu.findItem(R.id.action_settings);
         item8.isVisible = (visibleScreen == 1);
         var item9 = menu.findItem(R.id.action_enablepushauthentication);
-        item9.isVisible = (notificationManager.areNotificationsEnabled() == false);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            item9.isVisible = (notificationManager.areNotificationsEnabled() == false)
+        } else {
+            item9.isVisible = false
+        }
         return true
     }
 

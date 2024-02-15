@@ -225,7 +225,11 @@ class ScreenCaptureService : Service() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
             } else {
-                cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
+                } else {
+                    cropedBitmap.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
+                }
             }
         } else if (g_desktop_imageType == 2) { // PNG
             cropedBitmap.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
@@ -257,7 +261,11 @@ class ScreenCaptureService : Service() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 bm.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
             } else {
-                bm.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    bm.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
+                } else {
+                    bm.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
+                }
             }
         } else if (g_desktop_imageType == 2) { // PNG
             bm.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
