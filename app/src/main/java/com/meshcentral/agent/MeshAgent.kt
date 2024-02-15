@@ -589,6 +589,8 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         r.put("device", android.os.Build.DEVICE)
         r.put("display", android.os.Build.DISPLAY)
         //r.put("fingerprint", android.os.Build.FINGERPRINT)
+        r.put("androidapi", android.os.Build.VERSION.SDK_INT)
+        r.put("androidrelease", android.os.Build.VERSION.RELEASE)
         r.put("host", android.os.Build.HOST)
         r.put("id", android.os.Build.ID)
         r.put("hardware", android.os.Build.HARDWARE)
@@ -607,31 +609,30 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     private fun getNetInfo() : JSONObject {
         var r = JSONObject()
         for (n in NetworkInterface.getNetworkInterfaces()) {
-            if (n.hardwareAddress != null) {
-                var s = JSONArray()
-                var count = 0
-                for (j in n.interfaceAddresses) {
+            var s = JSONArray()
+            var count = 0
+            for (j in n.interfaceAddresses) {
+                var x = JSONObject()
+                x.put("address", j.address.hostAddress)
+                if (n.hardwareAddress != null) {
                     var mac = n.hardwareAddress.toHex().toUpperCase()
-                    var mac2 = mac.substring(0, 2) + ":" + mac.substring(2, 4) + ":" + mac.substring(4, 6) + ":" + mac.substring(6, 8) + ":" + mac.substring(8, 10) + ":" + mac.substring(10, 12)
-                    var x = JSONObject()
-                    x.put("address", j.address.hostAddress)
-                    x.put("mac", mac2)
-                    if (n.isUp) {
-                        x.put("status", "up")
-                    } else {
-                        x.put("status", "down")
-                    }
-                    if (j.address.hostAddress.indexOf(':') >= 0) {
-                        x.put("family", "IPv6")
-                    } else {
-                        x.put("family", "IPv4")
-                    }
-                    x.put("index", n.index)
-                    s.put(x)
-                    count = count + 1
+                    x.put("mac", mac.substring(0, 2) + ":" + mac.substring(2, 4) + ":" + mac.substring(4, 6) + ":" + mac.substring(6, 8) + ":" + mac.substring(8, 10) + ":" + mac.substring(10, 12))
                 }
-                if (count > 0) { r.put(n.displayName, s) }
+                if (n.isUp) {
+                    x.put("status", "up")
+                } else {
+                    x.put("status", "down")
+                }
+                if (j.address.hostAddress.indexOf(':') >= 0) {
+                    x.put("family", "IPv6")
+                } else {
+                    x.put("family", "IPv4")
+                }
+                x.put("index", n.index)
+                s.put(x)
+                count = count + 1
             }
+            if (count > 0) { r.put(n.displayName, s) }
         }
         return r
     }
