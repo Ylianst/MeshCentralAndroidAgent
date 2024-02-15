@@ -351,6 +351,9 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     //println("SysInfo")
                     val s = JSONObject()
                     s.put("mobile", getSysBuildInfo())
+                    var identifiers = JSONObject()
+                    identifiers.put("storage_devices", getStorageInfo())
+                    s.put("identifiers", identifiers)
                     val t = JSONObject()
                     t.put("hardware", s)
                     var hash1 = MessageDigest.getInstance("SHA-384").digest(t.toString().toByteArray()).toHex()
@@ -606,6 +609,18 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         return r;
     }
 
+    private fun getStorageInfo() : JSONArray {
+        var r = JSONArray()
+        val internalStat = StatFs(Environment.getDataDirectory().path)
+        val totalSpace = internalStat.blockCountLong * internalStat.blockSizeLong
+        var onboard = JSONObject()
+        onboard.put("Size", totalSpace)
+        onboard.put("Caption", "Onboard Storage")
+        onboard.put("Model", "Onboard Storage")
+        r.put(onboard)
+        return r
+    }
+
     private fun getNetInfo() : JSONObject {
         var r = JSONObject()
         for (n in NetworkInterface.getNetworkInterfaces()) {
@@ -713,7 +728,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         when (cmd) {
             "help" -> {
                 // Return the list of available console commands
-                r = "Available commands: alert, battery, dial, flash, netinfo, openurl, openbrowser,\r\n  serverlog, sysinfo, toast, uiclose, uistate, vibrate"
+                r = "Available commands: alert, battery, dial, flash, netinfo, openurl, openbrowser,\r\n  serverlog, sysinfo, storageinfo, toast, uiclose, uistate, vibrate"
             }
             "alert" -> {
                 // Display alert message
@@ -768,6 +783,10 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             "sysinfo" -> {
                 // System info
                 r = getSysBuildInfo().toString(2)
+            }
+            "storageinfo" -> {
+                // Storage info
+                r = getStorageInfo().toString(2)
             }
             "netinfo" -> {
                 // Network info
