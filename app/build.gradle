@@ -10,8 +10,8 @@ android {
         targetSdk 34
         applicationId "com.meshcentral.agent2"
         minSdk 23
-        versionCode 25
-        versionName "1.0.19"
+        versionCode 27
+        versionName "1.0.20"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
