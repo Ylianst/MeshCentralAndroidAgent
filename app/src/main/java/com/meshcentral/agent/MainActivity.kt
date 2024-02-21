@@ -1,6 +1,7 @@
 package com.meshcentral.agent
 
 //import com.google.firebase.iid.FirebaseInstanceId
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Notification
@@ -28,6 +29,8 @@ import android.view.MenuItem
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 import com.google.firebase.messaging.FirebaseMessaging
 import org.spongycastle.asn1.x500.X500Name
@@ -435,10 +438,26 @@ class MainActivity : AppCompatActivity() {
         return (meshAgent == null)
     }
 
+    fun requestNotificationsSupport() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val permissionState =
+                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            // If the permission is not granted, request it.
+            if (permissionState == PackageManager.PERMISSION_DENIED) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                    1
+                )
+            }
+        }
+    }
+
     fun toggleAgentConnection(userInitiated : Boolean) {
         //println("toggleAgentConnection")
         if ((meshAgent == null) && (serverLink != null)) {
             // Create and connect the agent
+            requestNotificationsSupport();
             if (agentCertificate == null) {
                 val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
                 var certb64 : String? = sharedPreferences?.getString("agentCert", null)
