@@ -1,8 +1,17 @@
 package com.meshcentral.agent
 
 //import com.google.firebase.iid.FirebaseInstanceId
-import android.app.*
-import android.content.*
+import android.app.Activity
+import android.app.AlertDialog
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.media.projection.MediaProjectionManager
@@ -10,6 +19,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.provider.Settings
 import android.text.InputType
 import android.util.Base64
 import android.view.Gravity
@@ -17,10 +27,8 @@ import android.view.Menu
 import android.view.MenuItem
 import android.widget.EditText
 import android.widget.Toast
-import android.provider.Settings
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
-import com.google.firebase.installations.FirebaseInstallations
 import com.google.firebase.messaging.FirebaseMessaging
 import org.spongycastle.asn1.x500.X500Name
 import org.spongycastle.cert.X509v3CertificateBuilder
@@ -30,12 +38,18 @@ import org.spongycastle.jce.provider.BouncyCastleProvider
 import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
-import java.security.*
+import java.security.KeyFactory
+import java.security.KeyPairGenerator
+import java.security.PrivateKey
+import java.security.SecureRandom
+import java.security.Security
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
-import java.util.*
+import java.util.Date
+import java.util.Random
 import kotlin.math.absoluteValue
+
 
 // You can hardcode a server connection string into this application by setting this string.
 // Make sure to replace all $ with \$ if your link string contains the $ character
@@ -507,7 +521,14 @@ class MainActivity : AppCompatActivity() {
         val intent = Intent(this, MainActivity::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         if (url != null) { intent.putExtra("url", url); }
-        val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+        val pendingIntent: PendingIntent
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            pendingIntent =
+                PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        } else {
+            pendingIntent =
+                PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             notificationChannel = NotificationChannel(getString(R.string.default_notification_channel_id), "MeshCentral Agent Channel", NotificationManager.IMPORTANCE_DEFAULT)
