@@ -288,7 +288,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             var imageView : ImageView? = null
             try { imageView = view?.findViewById<ImageView>(R.id.mainImageView) } catch (ex: Exception) {}
             if (imageView != null) {
-                imageView?.setImageResource(R.mipmap.ic_user_foreground)
+                imageView?.setImageResource(R.mipmap.ic_user)
                 val param = imageView?.layoutParams
                 if (param is ViewGroup.MarginLayoutParams) {
                     (param as ViewGroup.MarginLayoutParams).setMargins(128, 128, 128, 128)
