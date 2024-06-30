@@ -33,6 +33,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 import com.google.firebase.messaging.FirebaseMessaging
+import org.json.JSONObject
 import org.spongycastle.asn1.x500.X500Name
 import org.spongycastle.cert.X509v3CertificateBuilder
 import org.spongycastle.cert.jcajce.JcaX509CertificateConverter
@@ -299,6 +300,23 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == MainActivity.Companion.REQUEST_CODE) {
             if (resultCode == RESULT_OK) {
                 startService(com.meshcentral.agent.ScreenCaptureService.getStartIntent(this, resultCode, data))
+                if (meshAgent?.tunnels?.getOrNull(0) != null) {
+                    val json = JSONObject()
+                    json.put("type", "console")
+                    json.put("msg", null)
+                    json.put("msgid", 0)
+                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
+                }
+                return
+            } else {
+                if (meshAgent?.tunnels?.getOrNull(0) != null) {
+                    val json = JSONObject()
+                    json.put("type", "console")
+                    json.put("msg", "denied")
+                    json.put("msgid", 2)
+                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
+                    meshAgent!!.tunnels[0].Stop()
+                }
                 return
             }
         }

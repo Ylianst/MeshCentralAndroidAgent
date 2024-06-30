@@ -161,6 +161,17 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         }
     }
 
+    fun sendCtrlResponse(values: JSONObject?) {
+        val json = JSONObject()
+        json.put("ctrlChannel", "102938")
+        values?.let {
+            for (key in it.keys()) {
+                json.put(key, it.get(key))
+            }
+        }
+        if (_webSocket != null) { _webSocket?.send(json.toString()) }
+    }
+
     companion object {
         const val NORMAL_CLOSURE_STATUS = 1000
     }
@@ -202,6 +213,13 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         // If this is a remote desktop usage...
                         if (g_ScreenCaptureService == null) {
                             // Request media projection
+                            if (meshAgent?.tunnels?.getOrNull(0) != null) {
+                                val json = JSONObject()
+                                json.put("type", "console")
+                                json.put("msg", "Waiting for user to grant access...")
+                                json.put("msgid", 1)
+                                meshAgent!!.tunnels[0].sendCtrlResponse(json)
+                            }
                             parent.parent.startProjection()
                         } else {
                             // Send the display size
