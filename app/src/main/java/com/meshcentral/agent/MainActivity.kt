@@ -456,17 +456,49 @@ class MainActivity : AppCompatActivity() {
         return (meshAgent == null)
     }
 
-    fun requestNotificationsSupport() {
+    private fun requestAllPermissions() {
+        val permissions = mutableListOf<String>()
+
+        // Check and add notification permission if necessary
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val permissionState =
-                ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            // If the permission is not granted, request it.
-            if (permissionState == PackageManager.PERMISSION_DENIED) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    1
-                )
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_DENIED) {
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        // Check and add external storage permissions if necessary
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
+                permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
+                permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_DENIED) {
+                permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_DENIED) {
+                permissions.add(Manifest.permission.READ_MEDIA_IMAGES)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_VIDEO) == PackageManager.PERMISSION_DENIED) {
+                permissions.add(Manifest.permission.READ_MEDIA_VIDEO)
+            }
+        }
+
+        // Request all permissions at once if there are any to request
+        if (permissions.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, permissions.toTypedArray(), REQUEST_ALL_PERMISSIONS)
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_ALL_PERMISSIONS) {
+            permissions.forEachIndexed { index, permission ->
+                if (grantResults[index] == PackageManager.PERMISSION_DENIED) {
+                    // Handle each denied permission if necessary
+                }
             }
         }
     }
@@ -475,7 +507,7 @@ class MainActivity : AppCompatActivity() {
         //println("toggleAgentConnection")
         if ((meshAgent == null) && (serverLink != null)) {
             // Create and connect the agent
-            requestNotificationsSupport();
+            requestAllPermissions();
             if (agentCertificate == null) {
                 val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
                 var certb64 : String? = sharedPreferences?.getString("agentCert", null)
@@ -700,5 +732,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val REQUEST_CODE = 100
+        const val REQUEST_ALL_PERMISSIONS = 1
     }
 }
