@@ -395,6 +395,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 val path = json.getString("path")
                 if (path == "") {
                     var r: JSONArray = JSONArray()
+                    r.put(JSONObject("{n:\"Sdcard\",t:2}"))
                     r.put(JSONObject("{n:\"Images\",t:2}"))
                     r.put(JSONObject("{n:\"Audio\",t:2}"))
                     r.put(JSONObject("{n:\"Videos\",t:2}"))
@@ -509,12 +510,26 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 MediaStore.MediaColumns.MIME_TYPE
         )
         var uri : Uri? = null;
+        if (dir.startsWith("Sdcard")) { uri = Uri.fromFile(Environment.getExternalStorageDirectory()) }
         if (dir.equals("Images")) { uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI }
         if (dir.equals("Audio")) { uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI }
         if (dir.equals("Videos")) { uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI }
         //if (dir == "Documents") { uri = MediaStore.Files. }
         if (uri == null) { return r }
-
+        if (dir.startsWith("Sdcard")) {
+            val path = dir.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
+            val listOfFiles = File(path).listFiles()
+            for (file in listOfFiles) {
+                var f : JSONObject = JSONObject()
+                f.put("n", file.name)
+                if (file.isDirectory) f.put("t", 2)
+                else f.put("t", 3)
+                //f.put("t", 3)
+                f.put("s", file.length())
+                f.put("d", file.lastModified())
+                r.put(f)
+            }
+        } else {
         val cursor: Cursor? = parent.parent.getContentResolver().query(
                 uri,
                 projection,
@@ -535,6 +550,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 f.put("d", cursor.getInt(dateModified))
                 r.put(f)
                 //println("${cursor.getString(titleColumn)}, ${cursor.getString(typeColumn)}")
+                }
             }
         }
         return r;
@@ -641,7 +657,6 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
 
     fun startFileTransfer(filename: String) {
         var filenameSplit = filename.split('/')
-        if (filenameSplit.count() != 2) { stopSocket(); return }
         //println("startFileTransfer: $filenameSplit")
 
         val projection = arrayOf(
@@ -650,12 +665,45 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 MediaStore.MediaColumns.SIZE
         )
         var uri : Uri? = null;
+        if (filenameSplit[0].startsWith("Sdcard")) { uri = Uri.fromFile(Environment.getExternalStorageDirectory()) }
         if (filenameSplit[0].equals("Images")) { uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI }
         if (filenameSplit[0].equals("Audio")) { uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI }
         if (filenameSplit[0].equals("Videos")) { uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI }
         //if (filenameSplit[0] == "Documents") { uri = MediaStore.Files. }
         if (uri == null) { stopSocket(); return }
-
+        if (filenameSplit[0].startsWith("Sdcard")){
+            val path = filename.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
+            val file = File(path)
+            if (file.exists()) {
+                val fileName = file.name
+                val fileSize = file.length()
+                var eventArgs = JSONArray()
+                eventArgs.put(fileName)
+                eventArgs.put(fileSize)
+                parent.logServerEventEx(106, eventArgs, "Download: ${fileName}, Size: $fileSize", serverData);
+                val contentUrl = Uri.fromFile(file)
+                try {
+                    // Serve the file
+                    parent.parent.getContentResolver().openInputStream(contentUrl).use { stream ->
+                            // Perform operation on stream
+                            var buf = ByteArray(65535)
+                            var len : Int
+                            while (true) {
+                                len = stream!!.read(buf, 0, 65535)
+                                if (len <= 0) { stopSocket(); break; } // Stream is done
+                                if (_webSocket == null) { stopSocket(); break; } // Web socket closed
+                                _webSocket?.send(buf.toByteString(0, len))
+                                if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
+                            }
+                        }
+                    return;
+                } catch (e: FileNotFoundException) {
+                    // file not found
+                }
+            } else {
+                // file does not exist
+            }
+        } else {
         val cursor: Cursor? = parent.parent.getContentResolver().query(
                 uri,
                 projection,
@@ -693,6 +741,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         }
                     }
                     return;
+                    }
                 }
             }
         }
