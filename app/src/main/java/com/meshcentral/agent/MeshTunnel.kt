@@ -304,6 +304,14 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         }
         catch (e: Exception) {
             println("Tunnel-Exception: ${e.toString()}")
+            // Report a problem
+            val json = JSONObject()
+            json.put("action", "uploaderror")
+            json.put("reqid", fileUploadReqId)
+            if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+            try { fileUpload?.close() } catch (ex : Exception) {}
+            fileUpload = null
+            return
         }
     }
 
@@ -416,7 +424,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             }
             "upload" -> {
                 // {"action":"upload","reqid":0,"path":"Images","name":"00000000.JPG","size":1180231}
-                //val path = json.getString("path")
+                val path = json.getString("path")
                 val name = json.getString("name")
                 //val size = json.getInt("size")
                 val reqid = json.getInt("reqid")
@@ -432,42 +440,47 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 fileUploadReqId = reqid
                 fileUploadSize = 0
 
-                // Open a output file stream
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val resolver: ContentResolver = parent.parent.getContentResolver()
-                    val contentValues = ContentValues()
-                    contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                    if (name.lowercase().endsWith(".jpg") || name.lowercase().endsWith(".jpeg")) {
-                        contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpg")
-                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
-                    }
-                    if (name.lowercase().endsWith(".png")) {
-                        contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
-                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
-                    }
-                    if (name.lowercase().endsWith(".bmp")) {
-                        contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/bmp")
-                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
-                    }
-                    if (name.lowercase().endsWith(".mp4")) {
-                        contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES)
-                    }
-                    if (name.lowercase().endsWith(".mp3")) {
-                        contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpeg3")
-                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
-                    }
-                    if (name.lowercase().endsWith(".ogg")) {
-                        contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "audio/ogg")
-                        contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
-                    }
-                    val fileUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-                    fileUpload = resolver.openOutputStream(Objects.requireNonNull(fileUri)!!)
-                } else {
-                    //val fileDir: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString()
-                    val fileDir: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString()
+                if (path.startsWith("Sdcard")) {
+                    val fileDir: String = path.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
                     val file = File(fileDir, name)
                     fileUpload = FileOutputStream(file)
+                } else {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val resolver: ContentResolver = parent.parent.getContentResolver()
+                        val contentValues = ContentValues()
+                        contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                        if (name.lowercase().endsWith(".jpg") || name.lowercase().endsWith(".jpeg")) {
+                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpg")
+                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                        }
+                        if (name.lowercase().endsWith(".png")) {
+                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
+                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                        }
+                        if (name.lowercase().endsWith(".bmp")) {
+                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/bmp")
+                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                        }
+                        if (name.lowercase().endsWith(".mp4")) {
+                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
+                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES)
+                        }
+                        if (name.lowercase().endsWith(".mp3")) {
+                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpeg3")
+                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
+                        }
+                        if (name.lowercase().endsWith(".ogg")) {
+                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "audio/ogg")
+                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
+                        }
+                        val fileUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+                        fileUpload = resolver.openOutputStream(Objects.requireNonNull(fileUri)!!)
+                    } else {
+                        //val fileDir: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString()
+                        val fileDir: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString()
+                        val file = File(fileDir, name)
+                        fileUpload = FileOutputStream(file)
+                    }
                 }
 
                 // Send response
