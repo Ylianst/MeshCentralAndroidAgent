@@ -704,43 +704,43 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 // file does not exist
             }
         } else {
-        val cursor: Cursor? = parent.parent.getContentResolver().query(
-                uri,
-                projection,
-                null,
-                null,
-                null
-        )
-        if (cursor != null) {
-            val idColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-            val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-            val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-            while (cursor.moveToNext()) {
-                var name = cursor.getString(titleColumn)
-                if (name == filenameSplit[1]) {
-                    var contentUrl: Uri = ContentUris.withAppendedId(uri, cursor.getLong(idColumn))
-                    var fileSize = cursor.getInt(sizeColumn)
+            val cursor: Cursor? = parent.parent.getContentResolver().query(
+                    uri,
+                    projection,
+                    null,
+                    null,
+                    null
+            )
+            if (cursor != null) {
+                val idColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+                while (cursor.moveToNext()) {
+                    var name = cursor.getString(titleColumn)
+                    if (name == filenameSplit[1]) {
+                        var contentUrl: Uri = ContentUris.withAppendedId(uri, cursor.getLong(idColumn))
+                        var fileSize = cursor.getInt(sizeColumn)
 
-                    // Event to the server
-                    var eventArgs = JSONArray()
-                    eventArgs.put(filename)
-                    eventArgs.put(fileSize)
-                    parent.logServerEventEx(106, eventArgs, "Download: ${filename}, Size: $fileSize", serverData);
+                        // Event to the server
+                        var eventArgs = JSONArray()
+                        eventArgs.put(filename)
+                        eventArgs.put(fileSize)
+                        parent.logServerEventEx(106, eventArgs, "Download: ${filename}, Size: $fileSize", serverData);
 
-                    // Serve the file
-                    parent.parent.getContentResolver().openInputStream(contentUrl).use { stream ->
-                        // Perform operation on stream
-                        var buf = ByteArray(65535)
-                        var len : Int
-                        while (true) {
-                            len = stream!!.read(buf, 0, 65535)
-                            if (len <= 0) { stopSocket(); break; } // Stream is done
-                            if (_webSocket == null) { stopSocket(); break; } // Web socket closed
-                            _webSocket?.send(buf.toByteString(0, len))
-                            if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
+                        // Serve the file
+                        parent.parent.getContentResolver().openInputStream(contentUrl).use { stream ->
+                            // Perform operation on stream
+                            var buf = ByteArray(65535)
+                            var len : Int
+                            while (true) {
+                                len = stream!!.read(buf, 0, 65535)
+                                if (len <= 0) { stopSocket(); break; } // Stream is done
+                                if (_webSocket == null) { stopSocket(); break; } // Web socket closed
+                                _webSocket?.send(buf.toByteString(0, len))
+                                if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
+                            }
                         }
-                    }
-                    return;
+                        return;
                     }
                 }
             }
