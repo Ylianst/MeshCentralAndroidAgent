@@ -445,36 +445,42 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         val resolver: ContentResolver = parent.parent.getContentResolver()
                         val contentValues = ContentValues()
+                        var fileUri: Uri? = null
                         contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-                        if (name.lowercase().endsWith(".jpg") || name.lowercase().endsWith(".jpeg")) {
-                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/jpg")
-                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                        val (mimeType, relativePath, externalUri) = when {
+                            name.lowercase().endsWith(".jpg") || name.lowercase().endsWith(".jpeg") -> Triple("image/jpg", Environment.DIRECTORY_PICTURES, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                            name.lowercase().endsWith(".png") -> Triple("image/png", Environment.DIRECTORY_PICTURES, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                            name.lowercase().endsWith(".bmp") -> Triple("image/bmp", Environment.DIRECTORY_PICTURES, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                            name.lowercase().endsWith(".mp4") -> Triple("video/mp4", Environment.DIRECTORY_MOVIES, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+                            name.lowercase().endsWith(".mp3") -> Triple("audio/mpeg3", Environment.DIRECTORY_MUSIC, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                            name.lowercase().endsWith(".ogg") -> Triple("audio/ogg", Environment.DIRECTORY_MUSIC, MediaStore.Audio.Media.EXTERNAL_CONTENT_URI)
+                            else -> {
+                                println("Unsupported file type: $name")
+                                Triple(null, null, null)
+                            }
                         }
-                        if (name.lowercase().endsWith(".png")) {
-                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
-                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                        if (mimeType != null && relativePath != null && externalUri != null) {
+                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                            fileUri = resolver.insert(externalUri, contentValues)
+                            try {
+                                fileUpload = resolver.openOutputStream(fileUri!!)
+                            } catch (e: Exception) {
+                                uploadError()
+                                return
+                            }
+                        } else {
+                            uploadError()
+                            return
                         }
-                        if (name.lowercase().endsWith(".bmp")) {
-                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "image/bmp")
-                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
-                        }
-                        if (name.lowercase().endsWith(".mp4")) {
-                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "video/mp4")
-                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES)
-                        }
-                        if (name.lowercase().endsWith(".mp3")) {
-                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "audio/mpeg3")
-                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
-                        }
-                        if (name.lowercase().endsWith(".ogg")) {
-                            contentValues.put(MediaStore.MediaColumns.MIME_TYPE, "audio/ogg")
-                            contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
-                        }
-                        val fileUri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
-                        fileUpload = resolver.openOutputStream(Objects.requireNonNull(fileUri)!!)
                     } else {
-                        //val fileDir: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString()
-                        val fileDir: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString()
+                        val fileExtension = name.lowercase().substringAfterLast('.')
+                        val fileDir: String = when (fileExtension) {
+                            "jpg", "jpeg", "png" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString()
+                            "mp4", "mkv" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).toString()
+                            "mp3", "wav" -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC).toString()
+                            else -> Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString()
+                        }
                         val file = File(fileDir, name)
                         try {
                             fileUpload = FileOutputStream(file)
@@ -581,70 +587,75 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 MediaStore.MediaColumns.SIZE
         )
         var uri : Uri? = null;
+        if (path.startsWith("Sdcard")) { uri = Uri.fromFile(Environment.getExternalStorageDirectory()) }
         if (path.equals("Images")) { uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI }
         if (path.equals("Audio")) { uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI }
         if (path.equals("Videos")) { uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI }
         //if (filenameSplit[0] == "Documents") { uri = MediaStore.Files. }
         if (uri == null) return
 
-        val cursor: Cursor? = parent.parent.getContentResolver().query(
+        if (path.startsWith("Sdcard")) {
+            var filePath = path.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
+            try {
+                for (i in 0 until filenames.length())
+                {
+                    fileArray.add(filenames.getString(i))
+                    val file = File(filePath + "/" + filenames.getString(i))
+                    if (file.exists()) {
+                        if(file.delete()){
+                            fileDeleteResponse(req, true) // Send success
+                        } else {
+                            fileDeleteResponse(req, false) // Send failure
+                        }
+                    } else {
+                        fileDeleteResponse(req, false) // Send failure, file not found
+                    }
+                }
+            } catch (securityException: SecurityException) {
+                fileDeleteResponse(req, false) // Send failure
+            }
+        } else {
+            val cursor: Cursor? = parent.parent.getContentResolver().query(
                 uri,
                 projection,
                 null,
                 null,
                 null
-        )
-        if (cursor != null) {
-            val idColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-            val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-            //val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-            var fileidArray:ArrayList<String> = ArrayList<String>()
-            var fileUriArray:ArrayList<Uri> = ArrayList<Uri>()
-            while (cursor.moveToNext()) {
-                var name = cursor.getString(titleColumn)
-                if (fileArray.contains(name)) {
-                    var id = cursor.getString(idColumn)
-                    var contentUrl: Uri = ContentUris.withAppendedId(uri, cursor.getLong(idColumn))
-                    //var fileSize = cursor.getInt(sizeColumn)
-                    println("addid: $name, uri: $contentUrl")
-                    fileidArray.add(id)
-                    fileUriArray.add(contentUrl)
-                }
-            }
-            /*
-            if (fileUriArray.count() > 1) {
-                println("w1")
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    println("w2")
-                    var pi: PendingIntent = MediaStore.createDeleteRequest(parent.parent.getContentResolver(), fileUriArray);
-
-                    println("w3")
-                    try {
-                        startIntentSenderForResult(parent.parent, pi.intentSender, DELETE_PERMISSION_REQUEST, null, 0, 0, 0, null);
-                        println("w4")
-                    } catch (ex: IntentSender.SendIntentException) {
+            )
+            if (cursor != null) {
+                val idColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                //val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+                var fileidArray:ArrayList<String> = ArrayList<String>()
+                var fileUriArray:ArrayList<Uri> = ArrayList<Uri>()
+                while (cursor.moveToNext()) {
+                    var name = cursor.getString(titleColumn)
+                    if (fileArray.contains(name)) {
+                        var id = cursor.getString(idColumn)
+                        var contentUrl: Uri = ContentUris.withAppendedId(uri, cursor.getLong(idColumn))
+                        //var fileSize = cursor.getInt(sizeColumn)
+                        fileidArray.add(id)
+                        fileUriArray.add(contentUrl)
                     }
                 }
-            }
-            */
-            if (fileidArray.count() == 1) {
-                try {
-                    parent.parent.contentResolver.delete(fileUriArray[0], "${MediaStore.Images.Media._ID} = ?", arrayOf(fileidArray[0]))
-                    fileDeleteResponse(req, true) // Send success
-                } catch (securityException: SecurityException) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        val recoverableSecurityException =
+                for (i in 0 until filenames.length()) {
+                    try {
+                        parent.parent.contentResolver.delete(fileUriArray[i],null,null)
+                        fileDeleteResponse(req, true) // Send success
+                    } catch (securityException: SecurityException) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            val recoverableSecurityException =
                                 securityException as? RecoverableSecurityException
-                                        ?: throw securityException
+                                    ?: throw securityException
 
-                        // Save the activity
-                        var activityCode = Random.nextInt() and 0xFFFF
-                        var pad = PendingActivityData(this, activityCode, fileUriArray[0], "${MediaStore.Images.Media._ID} = ?", fileidArray[0], req)
-                        pendingActivities.add(pad)
+                            // Save the activity
+                            var activityCode = Random.nextInt() and 0xFFFF
+                            var pad = PendingActivityData(this, activityCode, fileUriArray[0], "${MediaStore.Images.Media._ID} = ?", fileidArray[0], req)
+                            pendingActivities.add(pad)
 
-                        // Launch the activity
-                        val intentSender = recoverableSecurityException.userAction.actionIntent.intentSender
-                        parent.parent.startIntentSenderForResult(
+                            // Launch the activity
+                            val intentSender = recoverableSecurityException.userAction.actionIntent.intentSender
+                            parent.parent.startIntentSenderForResult(
                                 intentSender,
                                 activityCode,
                                 null,
@@ -652,9 +663,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                                 0,
                                 0,
                                 null
-                        )
-                    } else {
-                        fileDeleteResponse(req, false) // Send fail
+                            )
+                        } else {
+                            fileDeleteResponse(req, false) // Send fail
+                        }
                     }
                 }
             }
