@@ -263,12 +263,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         fileUpload?.write(buf, 1, buf.size - 1)
                     } catch (ex : Exception) {
                         // Report a problem
-                        val json = JSONObject()
-                        json.put("action", "uploaderror")
-                        json.put("reqid", fileUploadReqId)
-                        if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
-                        try { fileUpload?.close() } catch (ex : Exception) {}
-                        fileUpload = null
+                        uploadError()
                         return
                     }
                 } else {
@@ -278,12 +273,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         fileUpload?.write(msg.toByteArray())
                     } catch (ex : Exception) {
                         // Report a problem
-                        val json = JSONObject()
-                        json.put("action", "uploaderror")
-                        json.put("reqid", fileUploadReqId)
-                        if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
-                        try { fileUpload?.close() } catch (ex : Exception) {}
-                        fileUpload = null
+                        uploadError()
                         return
                     }
                 }
@@ -304,14 +294,6 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         }
         catch (e: Exception) {
             println("Tunnel-Exception: ${e.toString()}")
-            // Report a problem
-            val json = JSONObject()
-            json.put("action", "uploaderror")
-            json.put("reqid", fileUploadReqId)
-            if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
-            try { fileUpload?.close() } catch (ex : Exception) {}
-            fileUpload = null
-            return
         }
     }
 
@@ -393,6 +375,16 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         }
     }
 
+    private fun uploadError() {
+        val json = JSONObject()
+        json.put("action", "uploaderror")
+        json.put("reqid", fileUploadReqId)
+        if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+        try { fileUpload?.close() } catch (ex : Exception) {}
+        fileUpload = null
+        return
+    }
+
     private fun processTunnelData(jsonStr: String) {
         //println("JSON: $jsonStr")
         val json = JSONObject(jsonStr)
@@ -443,7 +435,12 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 if (path.startsWith("Sdcard")) {
                     val fileDir: String = path.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
                     val file = File(fileDir, name)
-                    fileUpload = FileOutputStream(file)
+                    try {
+                        fileUpload = FileOutputStream(file)
+                    } catch (e: Exception) {
+                        uploadError()
+                        return
+                    }
                 } else {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         val resolver: ContentResolver = parent.parent.getContentResolver()
@@ -479,7 +476,12 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         //val fileDir: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString()
                         val fileDir: String = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).toString()
                         val file = File(fileDir, name)
-                        fileUpload = FileOutputStream(file)
+                        try {
+                            fileUpload = FileOutputStream(file)
+                        } catch (e: Exception) {
+                            uploadError()
+                            return
+                        }
                     }
                 }
 
