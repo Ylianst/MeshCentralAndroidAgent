@@ -80,6 +80,7 @@ var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
 var g_autoConnect : Boolean = true
+var g_autoConsent : Boolean = false
 var g_userDisconnect : Boolean = false // Indicate user initiated disconnection
 var g_retryTimer: CountDownTimer? = null
 
@@ -683,6 +684,7 @@ class MainActivity : AppCompatActivity() {
         this.runOnUiThread {
             val pm: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
             g_autoConnect = pm.getBoolean("pref_autoconnect", false)
+            g_autoConsent = pm.getBoolean("pref_autoconsent", false)
             g_userDisconnect = false
             if (g_autoConnect == false) {
                 if (g_retryTimer != null) {
@@ -693,6 +695,11 @@ class MainActivity : AppCompatActivity() {
                 if ((meshAgent == null) && (!g_userDisconnect) && (g_retryTimer == null)) {
                     toggleAgentConnection(false)
                 }
+            }
+            if (g_autoConsent) {
+                startProjection()
+            } else {
+                stopProjection()
             }
         }
     }

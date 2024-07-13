@@ -499,7 +499,9 @@ class ScreenCaptureService : Service() {
         }
         if ((desktopTunnelCloud == 0) && (g_mainActivity != null)) {
             // If there are no more desktop tunnels, stop projection
-            g_mainActivity!!.stopProjection()
+            if (!g_autoConsent) {
+                g_mainActivity!!.stopProjection()
+            }
         }
     }
 

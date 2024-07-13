@@ -211,8 +211,8 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     startConnectionTimer()
                     if (usage == 2) {
                         // If this is a remote desktop usage...
-                        if (g_ScreenCaptureService == null) {
-                            // Request media projection
+                        if (!g_autoConsent) {
+                            // asking for consent
                             if (meshAgent?.tunnels?.getOrNull(0) != null) {
                                 val json = JSONObject()
                                 json.put("type", "console")
@@ -220,6 +220,9 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                                 json.put("msgid", 1)
                                 meshAgent!!.tunnels[0].sendCtrlResponse(json)
                             }
+                        }
+                        if (g_ScreenCaptureService == null) {
+                            // Request media projection
                             parent.parent.startProjection()
                         } else {
                             // Send the display size

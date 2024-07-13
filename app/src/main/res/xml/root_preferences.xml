@@ -10,6 +10,13 @@
             app:summaryOff="Only connect when requested"
             app:defaultValue="false"
             app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:key="pref_autoconsent"
+            app:title="Automatic Consent"
+            app:summaryOn="Automatically give consent to remote agent"
+            app:summaryOff="Always ask for consent when remote agent connects"
+            app:defaultValue="false"
+            app:useSimpleSummaryProvider="true" />
 
     </PreferenceCategory>
 </PreferenceScreen>
