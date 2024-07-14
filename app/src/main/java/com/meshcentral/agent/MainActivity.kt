@@ -667,9 +667,6 @@ class MainActivity : AppCompatActivity() {
     // Start screen sharing
     fun startProjection() {
         if ((g_ScreenCaptureService != null) || (meshAgent == null) || (meshAgent!!.state != 3)) return
-        if (meshAgent != null) {
-            meshAgent!!.sendConsoleResponse("Asking for display consent", sessionid = null)
-        }
         val mProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         startActivityForResult(mProjectionManager.createScreenCaptureIntent(), MainActivity.Companion.REQUEST_CODE)
     }
@@ -698,8 +695,6 @@ class MainActivity : AppCompatActivity() {
             }
             if (g_autoConsent) {
                 startProjection()
-            } else {
-                stopProjection()
             }
         }
     }
