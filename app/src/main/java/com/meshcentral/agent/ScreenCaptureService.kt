@@ -68,7 +68,7 @@ class ScreenCaptureService : Service() {
             try {
                 image = mImageReader!!.acquireLatestImage()
                 // Skip this image if null or websocket push-back is high
-                if ((image != null) && (checkDesktopTunnelPushback() < 65535)) {
+                if ((image != null) && (checkDesktopTunnelPushback() < 65535) && (meshAgent?.tunnels?.getOrNull(0) != null)) {
                     val planes: Array<Plane> = image.getPlanes()
                     val buffer = planes[0].buffer
                     val pixelStride = planes[0].pixelStride
@@ -128,7 +128,7 @@ class ScreenCaptureService : Service() {
                             {
                                 for (j in 0 until tilesWide)
                                 {
-                                    var tileNumber : Int = (i * tilesWide) + j;
+                                    val tileNumber : Int = (i * tilesWide) + j;
                                     if (oldcrcs!![tileNumber] != newcrcs!![tileNumber])
                                     {
                                         oldcrcs!![tileNumber] = newcrcs!![tileNumber];
@@ -165,7 +165,7 @@ class ScreenCaptureService : Service() {
             // If all different set the CRC's to the same, otherwise exit.
             if (!exit) {
                 for (xx in x until (x + w)) {
-                    var tileNumber : Int = (h * tilesWide) + xx;
+                    val tileNumber : Int = (h * tilesWide) + xx;
                     oldcrcs!![tileNumber] = newcrcs!![tileNumber];
                 }
             } else break;
@@ -497,10 +497,13 @@ class ScreenCaptureService : Service() {
             // If this is a connected desktop tunnel, count it
             if ((t.state == 2) && (t.usage == 2)) { desktopTunnelCloud++ }
         }
-        if ((desktopTunnelCloud == 0) && (g_mainActivity != null)) {
+        if (desktopTunnelCloud == 0) {
             // If there are no more desktop tunnels, stop projection
             if (!g_autoConsent) {
                 g_mainActivity!!.stopProjection()
+            } else { // reset the tilesFullWide and tilesFullHigh so on next connect it will send the whole image rather than changed tiles
+                tilesFullWide = 0
+                tilesFullHigh = 0
             }
         }
     }

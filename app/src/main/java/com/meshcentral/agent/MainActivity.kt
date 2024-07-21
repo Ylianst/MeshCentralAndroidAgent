@@ -695,6 +695,8 @@ class MainActivity : AppCompatActivity() {
             }
             if (g_autoConsent) {
                 startProjection()
+            } else if (!g_autoConsent && g_ScreenCaptureService != null) {
+                stopProjection()
             }
         }
     }
