@@ -404,7 +404,7 @@ class MainActivity : AppCompatActivity() {
         }
         val builder = AlertDialog.Builder(this)
         builder.setTitle("MeshCentral Server")
-        builder.setMessage("Clear server setup?")
+        builder.setMessage(getString(R.string.clear_server_setup))
         builder.setPositiveButton(android.R.string.ok) { _, _ ->
             this.setMeshServerLink(null)
         }
@@ -633,7 +633,7 @@ class MainActivity : AppCompatActivity() {
     fun promptForServerLink() {
         if (hardCodedServerLink != null) return
         val builder: AlertDialog.Builder = AlertDialog.Builder(this)
-        builder.setTitle("Server Pairing Link")
+        builder.setTitle(getString(R.string.server_pairing_link))
 
         // Set up the input
         val input = EditText(this)
@@ -657,7 +657,7 @@ class MainActivity : AppCompatActivity() {
     // Show alert that server pairing link is invalid
     fun indicateInvalidLink() {
         val builder: AlertDialog.Builder = AlertDialog.Builder(this)
-        builder.setTitle("Invalid Server Pairing Link")
+        builder.setTitle(getString(R.string.invalid_server_pairing_link))
 
         // Set up the buttons
         builder.setPositiveButton(android.R.string.ok) { dialog, _ -> dialog.cancel() }

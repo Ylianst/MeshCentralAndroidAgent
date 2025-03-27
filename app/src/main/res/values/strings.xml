@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">MeshCentral Agent</string>
+    <string name="app_name" translatable="false">MeshCentral Agent</string>
     <string name="action_settings">Settings</string>
     <!-- Strings used for fragments for navigation -->
     <string name="first_fragment_label">First Fragment</string>
@@ -22,7 +22,7 @@
     <string name="connected">Connected</string>
     <string name="authenticating">Authenticating</string>
     <string name="close">Close</string>
-    <string name="meshcentral">MeshCentral</string>
+    <string name="meshcentral" translatable="false">MeshCentral</string>
     <string name="sharescreen">Share Screen</string>
     <string name="stopsharescreen">Stop Screen Sharing</string>
     <string name="displaysharing">Display is being shared</string>
@@ -53,4 +53,14 @@
     </string>
     <string name="attachment_summary_off">Only download attachments when manually requested</string>
     <string name="enablepushauthentication">Enable Push Authentication</string>
+    <string name="automatic_connection">Automatic Connection</string>
+    <string name="automatically_connect_to_server">Automatically connect to server</string>
+    <string name="only_connect_when_requested">Only connect when requested</string>
+    <string name="automatic_consent">Automatic Consent</string>
+    <string name="automatically_give_consent_to_remote_agent">Automatically give consent to remote agent</string>
+    <string name="always_ask_for_consent_when_remote_agent_connects">Always ask for consent when remote agent connects</string>
+    <string name="setup_message">Setup to: %1$s?</string>
+    <string name="clear_server_setup">Clear server setup?</string>
+    <string name="server_pairing_link">Server Pairing Link</string>
+    <string name="invalid_server_pairing_link">Invalid Server Pairing Linbk</string>
 </resources>
