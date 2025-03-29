@@ -5,16 +5,16 @@
         app:icon="@drawable/ic_baseline_settings_24">
         <SwitchPreferenceCompat
             app:key="pref_autoconnect"
-            app:title="Automatic Connection"
-            app:summaryOn="Automatically connect to server"
-            app:summaryOff="Only connect when requested"
+            app:title="@string/automatic_connection"
+            app:summaryOn="@string/automatically_connect_to_server"
+            app:summaryOff="@string/only_connect_when_requested"
             app:defaultValue="false"
             app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat
             app:key="pref_autoconsent"
-            app:title="Automatic Consent"
-            app:summaryOn="Automatically give consent to remote agent"
-            app:summaryOff="Always ask for consent when remote agent connects"
+            app:title="@string/automatic_consent"
+            app:summaryOn="@string/automatically_give_consent_to_remote_agent"
+            app:summaryOff="@string/always_ask_for_consent_when_remote_agent_connects"
             app:defaultValue="false"
             app:useSimpleSummaryProvider="true" />
 

@@ -1,0 +1,61 @@
+<resources>
+    <string name="action_settings">Einstellungen</string>
+    <!-- Strings used for fragments for navigation -->
+    <string name="first_fragment_label">Erstes Fragment</string>
+    <string name="second_fragment_label">Zweites Fragment</string>
+    <string name="setup_server">Server-Setup</string>
+    <string name="manual_setup_server">Server manuell einrichten</string>
+    <string name="connect">Verbinden</string>
+    <string name="disconnect">Trennen</string>
+    <string name="clear_server">Server entfernen</string>
+    <string name="no_server_setup">Kein Server-Setup</string>
+    <string name="invalid_qrcode">Ungültiger QR-Code</string>
+    <string name="next">Weiter</string>
+    <string name="previous">Zurück</string>
+    <string name="ok">OK</string>
+    <string name="test1">Test1</string>
+    <string name="test2">Test2</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="disconnected">Getrennt</string>
+    <string name="connecting">Verbinde</string>
+    <string name="connected">Verbunden</string>
+    <string name="authenticating">Authentifiziere</string>
+    <string name="close">Schließen</string>
+    <string name="sharescreen">Bildschirm teilen</string>
+    <string name="stopsharescreen">Bildschirm nicht teilen</string>
+    <string name="displaysharing">Bildschirm wird geteilt</string>
+    <string name="default_notification_channel_id">Standard</string>
+    <string name="accept">Akzeptieren</string>
+    <string name="reject">Ablehnen</string>
+    <string name="authCode">------</string>
+    <string name="settings">Einstellungen</string>
+
+    <string name="hello_first_fragment">Erstes Fragment</string>
+    <string name="hello_second_fragment">Zweites Fragment. Argumente: %1$s</string>
+    <string name="loginVerification">Anmeldebestätigung</string>
+    <string name="title_activity_settings">Einstellungen</string>
+    <string name="tryingToConnect">Verbinde...</string>
+
+    <!-- Preference Titles -->
+    <string name="messages_header">Nachrichten</string>
+    <string name="sync_header">Sync</string>
+
+    <!-- Messages Preferences -->
+    <string name="signature_title">Ihre Signatur</string>
+    <string name="reply_title">Standard-Antwort</string>
+
+    <!-- Sync Preferences -->
+    <string name="sync_title">Email periodisch synchronisieren</string>
+    <string name="attachment_title">Eingehende Anhänge laden</string>
+    <string name="attachment_summary_on">Anhänge eingehender Emails automatisch laden</string>
+    <string name="attachment_summary_off">Anhänge nur auf Anforderung laden</string>
+    <string name="enablepushauthentication">Push-Authentifizierung aktivieren</string>
+    <string name="automatic_connection">Automatisch verbinden</string>
+    <string name="automatically_connect_to_server">Automatisch zum Server verbinden</string>
+    <string name="only_connect_when_requested">Nur auf Anforderung verbinden</string>
+    <string name="automatic_consent">Automatische Zustimmung</string>
+    <string name="automatically_give_consent_to_remote_agent">Dem Remote Agent automatisch Zustimmung erteilen</string>
+    <string name="always_ask_for_consent_when_remote_agent_connects">Immer Zustimmung für Verbindung anfordern</string>
+    <string name="setup_message">Verbinden mit: %1$s?</string>
+    <string name="clear_server_setup">Server-Setup löschen?</string>
+</resources>

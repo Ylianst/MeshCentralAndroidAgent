@@ -107,7 +107,7 @@ class ScannerFragment : Fragment(), PermissionListener {
         }
         val builder = AlertDialog.Builder(activity)
         builder.setTitle("MeshCentral Server")
-        builder.setMessage("Setup to: ${getServerHost(x)}?")
+        builder.setMessage(getString(R.string.setup_message, getServerHost(x)))
         builder.setPositiveButton(android.R.string.ok) { _, _ ->
             visibleScreen = 1
             (activity as MainActivity).setMeshServerLink(x)
