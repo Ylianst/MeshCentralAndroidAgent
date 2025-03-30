@@ -4,6 +4,13 @@
         app:title="@string/settings"
         app:icon="@drawable/ic_baseline_settings_24">
         <SwitchPreferenceCompat
+            app:key="pref_autostart"
+            app:title="@string/autostart"
+            app:summaryOn="@string/start_with_system"
+            app:summaryOff="@string/start_manually"
+            app:defaultValue="false"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
             app:key="pref_autoconnect"
             app:title="@string/automatic_connection"
             app:summaryOn="@string/automatically_connect_to_server"
