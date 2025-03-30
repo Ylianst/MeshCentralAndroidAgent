@@ -20,6 +20,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.InputType
 import android.util.Base64
@@ -61,6 +62,7 @@ import kotlin.math.absoluteValue
 val hardCodedServerLink : String? = null
 //val hardCodedServerLink : String? = "mc://central.mesh.meshcentral.com,2ZNi1e2Lrqi\$nnQ7NLJCJWNwxGD9ZstiNzxs\$LIE1tcHQD45bPDvbcKzpC9zUTX9,7b4b43cdad850135f36ab31124b52e47c167fba055ce800267a4dc89fe0e581c"
 
+
 // User interface values
 var g_mainActivity : MainActivity? = null
 var mainFragment : MainFragment? = null
@@ -79,6 +81,7 @@ var pageUrl : String? = null
 var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
+var g_autoStart : Boolean = false
 var g_autoConnect : Boolean = true
 var g_autoConsent : Boolean = false
 var g_userDisconnect : Boolean = false // Indicate user initiated disconnection
@@ -491,6 +494,34 @@ class MainActivity : AppCompatActivity() {
         if (permissions.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), REQUEST_ALL_PERMISSIONS)
         }
+
+        if (!Settings.canDrawOverlays(this)) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        }
+
+        // Check and add ignore battery optimization permissions if necessary
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        }
+
+        // Check and add post notifications permissions if necessary
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+            }
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -680,6 +711,7 @@ class MainActivity : AppCompatActivity() {
     fun settingsChanged() {
         this.runOnUiThread {
             val pm: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+            g_autoStart = pm.getBoolean("pref_autostart", false)
             g_autoConnect = pm.getBoolean("pref_autoconnect", false)
             g_autoConsent = pm.getBoolean("pref_autoconsent", false)
             g_userDisconnect = false
