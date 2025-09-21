@@ -20,6 +20,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.os.PowerManager
 import android.provider.Settings
 import android.text.InputType
 import android.util.Base64
@@ -54,6 +55,9 @@ import java.util.Date
 import java.util.Random
 import kotlin.math.absoluteValue
 
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
+
 
 // You can hardcode a server connection string into this application by setting this string.
 // Make sure to replace all $ with \$ if your link string contains the $ character
@@ -79,6 +83,7 @@ var pageUrl : String? = null
 var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
+var g_autoStart : Boolean = false
 var g_autoConnect : Boolean = true
 var g_autoConsent : Boolean = false
 var g_userDisconnect : Boolean = false // Indicate user initiated disconnection
@@ -95,6 +100,10 @@ var g_desktop_frameRateLimiter : Int = 100
 var g_auth_url : Uri? = null
 
 class MainActivity : AppCompatActivity() {
+    lateinit var dpm: DevicePolicyManager
+    lateinit var compName: ComponentName
+    val REQUEST_ENABLE_ADMIN = 1001
+
     var alert : AlertDialog? = null
     lateinit var notificationChannel: NotificationChannel
     lateinit var notificationManager: NotificationManager
@@ -105,7 +114,26 @@ class MainActivity : AppCompatActivity() {
         Security.insertProviderAt(BouncyCastleProvider(), 1)
     }
 
+    fun lockDevice() {
+        if(dpm.isAdminActive(compName)){
+            try{
+                dpm.lockNow()
+            }catch (e: java.lang.Exception){
+                println("Error in lockDevice: ${e.message}")
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        compName = ComponentName(this, DeviceAdmin::class.java)
+        if (!dpm.isAdminActive(compName)) {
+            val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName)
+                putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Necessary for being able to lock device remotely")
+            }
+            startActivityForResult(intent, REQUEST_ENABLE_ADMIN)
+        }
         g_mainActivity = this
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         if (hardCodedServerLink != null) {
@@ -181,6 +209,19 @@ class MainActivity : AppCompatActivity() {
         settingsChanged()
         if (g_autoConnect && !g_userDisconnect && (meshAgent == null)) {
             toggleAgentConnection(false)
+        }
+        if(intent.getBooleanExtra("autoconnect",false)){
+            toggleAgentConnection(false)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent != null) {
+            if(intent.getBooleanExtra("autoconnect",false)){
+                toggleAgentConnection(false)
+            }
         }
     }
 
@@ -319,6 +360,12 @@ class MainActivity : AppCompatActivity() {
                     meshAgent!!.tunnels[0].Stop()
                 }
                 return
+            }
+        }else if(requestCode == REQUEST_ENABLE_ADMIN){
+            if (dpm.isAdminActive(compName)) {
+                Toast.makeText(this, "Device Admin activated", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Device Admin non activated", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -490,6 +537,38 @@ class MainActivity : AppCompatActivity() {
         // Request all permissions at once if there are any to request
         if (permissions.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), REQUEST_ALL_PERMISSIONS)
+        }
+
+        if (!Settings.canDrawOverlays(this)) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        }
+
+        // Check and add ignore battery optimization permissions if necessary
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        }
+
+        // Check and add post notifications permissions if necessary
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+            }
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_BACKGROUND_LOCATION),100)
         }
     }
 
@@ -680,6 +759,7 @@ class MainActivity : AppCompatActivity() {
     fun settingsChanged() {
         this.runOnUiThread {
             val pm: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+            g_autoStart = pm.getBoolean("pref_autostart",false)
             g_autoConnect = pm.getBoolean("pref_autoconnect", false)
             g_autoConsent = pm.getBoolean("pref_autoconsent", false)
             g_userDisconnect = false

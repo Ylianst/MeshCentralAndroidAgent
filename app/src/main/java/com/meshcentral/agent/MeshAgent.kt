@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.*
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.*
 import android.provider.Settings
@@ -19,12 +20,14 @@ import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
+import java.net.InetAddress
 import java.net.NetworkInterface
 import java.security.MessageDigest
 import java.security.Signature
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPublicKey
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
@@ -39,7 +42,7 @@ class MeshUserInfo(userid: String, realname: String?, image: Bitmap?) {
     val realname: String? = realname
     val image: Bitmap? = image
     init {
-        println("MeshUserInfo: $userid, $realname")
+        //println("MeshUserInfo: $userid, $realname")
     }
 }
 
@@ -732,7 +735,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         when (cmd) {
             "help" -> {
                 // Return the list of available console commands
-                r = "Available commands: alert, battery, dial, flash, netinfo, openurl, openbrowser,\r\n  serverlog, sysinfo, storageinfo, toast, uiclose, uistate, vibrate"
+                r = "Available commands: alert, battery, dial, flash, lock, netinfo, openurl, openbrowser,\r\n  serverlog, sysinfo, storageinfo, toast, uiclose, uistate, vibrate"
             }
             "alert" -> {
                 // Display alert message
@@ -967,9 +970,27 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     }
                 }
             }
-            else -> {
-                // Unknown console command
-                r = "Unknown command \"$cmd\", type \"help\" for command list."
+            "lock" -> {
+                parent.dpm.lockNow()
+                r = "Device locked correctly"
+            }
+            "geolocation" -> {
+                val json = JSONObject()
+                try {
+                    var locationManager =
+                        parent.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                    json.put("action", "geolocation")
+                    var location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    if(location==null){
+                        location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    }
+                    json.put("altitude",location?.altitude)
+                    json.put("longitude", location?.longitude)
+                    json.put("latitude",location?.latitude)
+                }catch (securityException: SecurityException){
+                    println("Can't access location ${securityException.message}")
+                }
+                r = json.toString()
             }
         }
 

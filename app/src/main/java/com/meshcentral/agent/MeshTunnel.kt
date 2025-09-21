@@ -1,16 +1,20 @@
 package com.meshcentral.agent
 
 import android.app.RecoverableSecurityException
+import android.app.admin.DevicePolicyManager
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
+import android.content.Context
 import android.database.Cursor
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.CountDownTimer
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
+import androidx.core.content.ContextCompat.getSystemService
 import okhttp3.*
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -18,6 +22,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 //import org.webrtc.PeerConnectionFactory
 import java.io.*
+import java.net.InetAddress
+import java.net.NetworkInterface
 import java.nio.charset.Charset
 import java.security.MessageDigest
 import java.security.cert.CertificateException
@@ -401,6 +407,27 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         var action = json.getString("action")
         //println("action: $action")
         when (action) {
+            "geolocation" -> {
+                val json = JSONObject()
+                try {
+                    var locationManager = parent.parent.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+                    json.put("action", "geolocation")
+                    var location = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    if(location==null){
+                        location = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    }
+                    json.put("altitude",location?.altitude)
+                    json.put("longitude", location?.longitude)
+                    json.put("latitude",location?.latitude)
+                }catch (securityException: SecurityException){
+                    println("Can't access location ${securityException.message}")
+                    json.put("error", securityException.message)
+                }
+                //if(_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+                if (_webSocket != null){
+                    _webSocket?.send(json.toString().toByteArray(Charsets.UTF_8).toByteString())
+                }
+            }
             "ls" -> {
                 val path = json.getString("path")
                 if (path == "") {

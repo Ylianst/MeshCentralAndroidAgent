@@ -61,6 +61,10 @@
     <string name="always_ask_for_consent_when_remote_agent_connects">Always ask for consent when remote agent connects</string>
     <string name="setup_message">Setup to: %1$s?</string>
     <string name="clear_server_setup">Clear server setup?</string>
+    <string name="autostart">Autostart</string>
+    <string name="start_manually">Start manually</string>
+    <string name="start_with_system">Start with system</string>
+    <string name="starting_meshcentral_bootservice">Start MeshCentral BootService ...</string>
     <string name="server_pairing_link">Server Pairing Link</string>
-    <string name="invalid_server_pairing_link">Invalid Server Pairing Linbk</string>
+    <string name="invalid_server_pairing_link">Invalid Server Pairing Link</string>
 </resources>
