@@ -59,8 +59,14 @@
     <string name="automatic_consent">Automatic Consent</string>
     <string name="automatically_give_consent_to_remote_agent">Automatically give consent to remote agent</string>
     <string name="always_ask_for_consent_when_remote_agent_connects">Always ask for consent when remote agent connects</string>
+    <string name="automatic_consent_notify">Auto Consent Notify</string>
+    <string name="always_notify_auto_consent_remote_agent_connect">Notify on connect after auto consent</string>
+    <string name="donot_notify_auto_consent_remote_agent_connect">Do not notify on connect after auto consent</string>
     <string name="setup_message">Setup to: %1$s?</string>
     <string name="clear_server_setup">Clear server setup?</string>
     <string name="server_pairing_link">Server Pairing Link</string>
     <string name="invalid_server_pairing_link">Invalid Server Pairing Linbk</string>
+    <string name="automatic_anotations">Automatic Annotations</string>
+    <string name="automatically_give_consent_enable_anotations">Turn on on-screen hints without asking when requested</string>
+    <string name="always_ask_enable_anotations">Ask me before enabling on-screen hints</string>
 </resources>

@@ -11,6 +11,10 @@ import android.os.CountDownTimer
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
+import android.widget.Toast
+import com.meshcentral.agent.annotation.AnnotationConsent
+import com.meshcentral.agent.annotation.AnnotationController
+import com.meshcentral.agent.annotation.AnnotationServiceBus
 import okhttp3.*
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -152,6 +156,15 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             connectionTimer?.cancel()
             connectionTimer = null
         }
+        if ((usage == 2) && (g_ScreenCaptureService != null)) {
+            g_ScreenCaptureService!!.onTunnelDisconnected()
+        }
+
+        if (usage == 2) {
+            AnnotationServiceBus.clear()
+            AnnotationController.hide(parent.parent)
+        }
+
         // Remove the tunnel from the parent's list
         parent.removeTunnel(this) // Notify the parent that this tunnel is done
 
@@ -234,6 +247,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                             }
                             // Send the display size
                             updateDesktopDisplaySize()
+
+                            if (g_autoConsent && g_ScreenCaptureService != null) {
+                                g_ScreenCaptureService!!.requestImmediateFrame()
+                            }
                         }
                     }
                 } else {
@@ -524,10 +541,14 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 eventArgs.put(fileUploadSize)
                 parent.logServerEventEx(105, eventArgs, "Upload: \"${fileUploadName}}\", Size: $fileUploadSize", serverData);
             }
+            "annotation" -> {
+                handleAnnotation(json)
+            }
             else -> {
                 // Unknown command, ignore it.
                 println("Unhandled action: $action, $jsonStr")
             }
+
         }
     }
 
@@ -844,5 +865,137 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         //factory.createPeerConnection()
     }
     */
+
+    // ----- Annotation control over the desktop tunnel -----
+
+    private fun sendAnnoStatus(status: String, reason: String? = null) {
+        val o = JSONObject()
+        o.put("type", "annotation")
+        o.put("status", status)
+        if (reason != null) o.put("reason", reason)
+        sendCtrlResponse(o)
+    }
+
+    private fun colorFromHex(hex: String?): Int? {
+        if (hex.isNullOrEmpty()) return null
+        // Accept "#RRGGBB" or "#AARRGGBB"
+        return try { android.graphics.Color.parseColor(hex) } catch (_: Exception) { null }
+    }
+
+    private fun handleAnnotation(json: JSONObject) {
+        // Only valid during remote desktop session
+        if (usage != 2) { sendAnnoStatus("error", "no_kvm"); return }
+
+        val cmd = json.optString("cmd", "")
+        when (cmd) {
+            "start" -> {
+                // Ask for consent/permission if needed, then show overlay
+                AnnotationConsent.requestEnableWithConsent(parent.parent)
+                // Give service a moment to come up, then report status
+                parent.parent.mainLooper.let { looper ->
+                    android.os.Handler(looper).postDelayed({
+                        if (AnnotationServiceBus.isActive()) {
+                            sendAnnoStatus("started")
+                        } else {
+                            // Not active yet (user may still be in system Settings)
+                            sendAnnoStatus("pending_permission")
+                        }
+                    }, 350)
+                }
+            }
+            "stop" -> {
+                AnnotationServiceBus.clear()
+                AnnotationController.hide(parent.parent)
+                sendAnnoStatus("stopped")
+            }
+            "clear" -> {
+                AnnotationServiceBus.clear()
+                sendAnnoStatus("cleared")
+            }
+            "style" -> {
+                val color = colorFromHex(json.optString("color"))
+                val width = json.optDouble("width", Double.NaN)
+                if (color != null) {
+                    val w = if (width.isNaN()) 6f else width.toFloat()
+                    AnnotationServiceBus.setStyle(
+                        com.meshcentral.agent.annotation.DrawStyle(color, w)
+                    )
+                    sendAnnoStatus("ok")
+                } else {
+                    sendAnnoStatus("error", "bad_color")
+                }
+            }
+            "draw" -> {
+                val ttlMs = json.optLong("ttlMs", 0L).coerceAtLeast(0L)
+                when (json.optString("shape", "")) {
+                    "rect" -> {
+                        val x = json.optDouble("x", Double.NaN)
+                        val y = json.optDouble("y", Double.NaN)
+                        val w = json.optDouble("w", Double.NaN)
+                        val h = json.optDouble("h", Double.NaN)
+                        if (x.isNaN() || y.isNaN() || w.isNaN() || h.isNaN()) { sendAnnoStatus("error","bad_args"); return }
+                        AnnotationServiceBus.drawRect(
+                            x.toFloat(), y.toFloat(), w.toFloat(), h.toFloat(), ttlMs
+                        )
+                        sendAnnoStatus("ok")
+                    }
+                    "circle" -> {
+                        val x = json.optDouble("x", Double.NaN)
+                        val y = json.optDouble("y", Double.NaN)
+                        val r = json.optDouble("r", Double.NaN)
+                        if (x.isNaN() || y.isNaN() || r.isNaN()) { sendAnnoStatus("error","bad_args"); return }
+                        AnnotationServiceBus.drawCircle(
+                            x.toFloat(), y.toFloat(), r.toFloat(), ttlMs
+                        )
+                        sendAnnoStatus("ok")
+                    }
+                    "arrow" -> {
+                        val x1 = json.optDouble("x1", Double.NaN)
+                        val y1 = json.optDouble("y1", Double.NaN)
+                        val x2 = json.optDouble("x2", Double.NaN)
+                        val y2 = json.optDouble("y2", Double.NaN)
+                        if (x1.isNaN() || y1.isNaN() || x2.isNaN() || y2.isNaN()) { sendAnnoStatus("error","bad_args"); return }
+                        AnnotationServiceBus.drawArrow(
+                            x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), ttlMs
+                        )
+                        sendAnnoStatus("ok")
+                    }
+                    "path" -> {
+                        val arr = json.optJSONArray("points") ?: run { sendAnnoStatus("error","bad_args"); return }
+                        val pts = buildList {
+                            for (i in 0 until arr.length()) {
+                                val p = arr.optJSONArray(i) ?: continue
+                                if (p.length() >= 2) add(p.getDouble(0).toFloat() to p.getDouble(1).toFloat())
+                            }
+                        }
+                        if (pts.size < 2) { sendAnnoStatus("error","bad_args"); return }
+                        AnnotationServiceBus.drawPath(pts, ttlMs)
+                        sendAnnoStatus("ok")
+                    }
+                    else -> sendAnnoStatus("error","bad_shape")
+                }
+            }
+            "strokeStart" -> {
+                val x = json.optDouble("x", Double.NaN)
+                val y = json.optDouble("y", Double.NaN)
+                if (x.isNaN() || y.isNaN()) { sendAnnoStatus("error","bad_args"); return }
+                AnnotationServiceBus.strokeStart(x.toFloat(), y.toFloat())
+            }
+            "strokeMove" -> {
+                val x = json.optDouble("x", Double.NaN)
+                val y = json.optDouble("y", Double.NaN)
+                if (x.isNaN() || y.isNaN()) { /* ignore bad move */ return }
+                AnnotationServiceBus.strokeMove(x.toFloat(), y.toFloat())
+            }
+            "strokeEnd" -> {
+                val ttlMs = json.optLong("ttlMs", 0L).coerceAtLeast(0L)
+                AnnotationServiceBus.strokeEnd(ttlMs)
+                sendAnnoStatus("ok")
+            }
+            else -> {
+                sendAnnoStatus("error", "unknown_cmd")
+            }
+        }
+    }
 
 }
