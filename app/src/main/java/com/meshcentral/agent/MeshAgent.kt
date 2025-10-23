@@ -11,6 +11,8 @@ import android.net.Uri
 import android.os.*
 import android.provider.Settings
 import android.util.Base64
+import com.meshcentral.agent.annotation.AnnotationBridge
+import com.meshcentral.agent.annotation.AnnotationConsent
 import okhttp3.*
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -305,6 +307,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         UpdateState(3) // Switch to connected and verified
         startConnectionTimer()
         sendCoreInfo()
+        sendAnnotationCaps()
         sendNetworkUpdate(false)
         sendServerImageRequest()
 
@@ -406,7 +409,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                         "console" -> {
                             processConsoleMessage(json.getString("value"), json.getString("sessionid"), json)
                         }
-                        "tunnel" -> {
+                "tunnel" -> {
                             /*
                             {"action":"msg",
                             "type":"tunnel",
@@ -511,6 +514,23 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                         parent.refreshInfo()
                     }
                 }
+                "annotation" -> {
+                    val op = json.optString("op", "")
+
+                    // Allow probe (and start/style/remove if you want) without ScreenCaptureService.
+                    val opsAllowedWithoutCapture = setOf("probe", "start", "style", "remove")
+
+                    if (!opsAllowedWithoutCapture.contains(op)) {
+                        if (g_ScreenCaptureService == null) return
+                    }
+
+                    if (op == "start") {
+                        AnnotationConsent.requestEnableWithConsent(parent)
+                    }
+
+                    val ack = AnnotationBridge.handleFromServer(parent, json)
+                    ack?.let { _webSocket?.send(it.toString().toByteArray().toByteString()) }
+                }
                 else -> {
                     // Unknown command, ignore it.
                     println("Unhandled action: $action")
@@ -530,6 +550,21 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         r.put("caps", 13) // Capability bitmask: 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript, 32 = Temporary Agent, 64 = Recovery Agent
         if (pushMessagingToken != null) { r.put("pmt", pushMessagingToken) }
         if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
+    }
+
+    // Send Annotation Capability
+    fun sendAnnotationCaps() {
+        try {
+            val hasPerm = if (Build.VERSION.SDK_INT >= 23)
+                Settings.canDrawOverlays(parent)
+            else true
+
+            val r = JSONObject()
+            r.put("action", "annotationcaps")
+            r.put("annotation", true)                    // feature supported
+            r.put("annotationPermission", if (hasPerm) "granted" else "denied")
+            _webSocket?.send(r.toString().toByteArray().toByteString())
+        } catch (_: Exception) { /* ignore */ }
     }
 
     // Send 2FA authentication URL and approval/reject back
@@ -1031,6 +1066,10 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             }
         }
         if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+    }
+
+    fun sendJson(obj: JSONObject) {
+        _webSocket?.send(obj.toString().toByteArray().toByteString())
     }
 
 }

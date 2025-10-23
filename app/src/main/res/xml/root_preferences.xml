@@ -17,6 +17,19 @@
             app:summaryOff="@string/always_ask_for_consent_when_remote_agent_connects"
             app:defaultValue="false"
             app:useSimpleSummaryProvider="true" />
-
+        <SwitchPreferenceCompat
+            app:key="pref_autoconsentnotifcation"
+            app:title="@string/automatic_consent_notify"
+            app:summaryOn="@string/always_notify_auto_consent_remote_agent_connect"
+            app:summaryOff="@string/donot_notify_auto_consent_remote_agent_connect"
+            app:defaultValue="true"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:key="pref_annotation_auto"
+            app:title="@string/automatic_anotations"
+            app:summaryOn="@string/automatically_give_consent_enable_anotations"
+            app:summaryOff="@string/always_ask_enable_anotations"
+            app:defaultValue="false"
+            app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 </PreferenceScreen>

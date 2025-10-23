@@ -33,6 +33,12 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 import com.google.firebase.messaging.FirebaseMessaging
+import com.meshcentral.agent.annotation.AnnotationConsent
+import com.meshcentral.agent.annotation.AnnotationController
+import com.meshcentral.agent.annotation.AnnotationFeature
+import com.meshcentral.agent.annotation.AnnotationFeature.stopAnnotations
+import com.meshcentral.agent.annotation.AnnotationPrefs
+import com.meshcentral.agent.annotation.AnnotationServiceBus
 import org.json.JSONObject
 import org.spongycastle.asn1.x500.X500Name
 import org.spongycastle.cert.X509v3CertificateBuilder
@@ -81,6 +87,8 @@ var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivi
 var pushMessagingToken : String? = null
 var g_autoConnect : Boolean = true
 var g_autoConsent : Boolean = false
+var g_autoAnnotation: Boolean = false
+var g_autoConsentNotification : Boolean = true
 var g_userDisconnect : Boolean = false // Indicate user initiated disconnection
 var g_retryTimer: CountDownTimer? = null
 
@@ -224,6 +232,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             item9.isVisible = false
         }
+        var item10 = menu.findItem(R.id.action_stopannotations);
+        item10.isVisible = AnnotationServiceBus.isActive()
         return true
     }
 
@@ -255,6 +265,11 @@ class MainActivity : AppCompatActivity() {
         if (item.itemId == R.id.action_stopscreensharing) {
             // Stop projection
             stopProjection()
+        }
+
+        if (item.itemId == R.id.action_stopannotations) {
+            // Stop annotations
+            stopAnnotations(this)
         }
 
         if ((item.itemId == R.id.action_manual_setup_server) && (hardCodedServerLink == null)) {
@@ -297,10 +312,12 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         println("onActivityResult, requestCode: $requestCode, resultCode: $resultCode, data: ${data.toString()}")
         super.onActivityResult(requestCode, resultCode, data)
+        AnnotationController.onActivityResult(this, requestCode)
 
         if (requestCode == MainActivity.Companion.REQUEST_CODE) {
             if (resultCode == RESULT_OK) {
                 startService(com.meshcentral.agent.ScreenCaptureService.getStartIntent(this, resultCode, data))
+                AnnotationFeature.onScreenShareStarted(this)
                 if (meshAgent?.tunnels?.getOrNull(0) != null) {
                     val json = JSONObject()
                     json.put("type", "console")
@@ -674,6 +691,7 @@ class MainActivity : AppCompatActivity() {
     // Stop screen sharing
     fun stopProjection() {
         if (g_ScreenCaptureService == null) return
+        AnnotationFeature.onScreenShareStopped(this)
         startService(com.meshcentral.agent.ScreenCaptureService.getStopIntent(this))
     }
 
@@ -682,6 +700,9 @@ class MainActivity : AppCompatActivity() {
             val pm: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
             g_autoConnect = pm.getBoolean("pref_autoconnect", false)
             g_autoConsent = pm.getBoolean("pref_autoconsent", false)
+            g_autoAnnotation = pm.getBoolean("pref_annotation_auto", false)
+            g_autoConsentNotification = pm.getBoolean("pref_autoconsentnotifcation", true)
+            AnnotationPrefs.setAutoEnabled(this, g_autoAnnotation)
             g_userDisconnect = false
             if (g_autoConnect == false) {
                 if (g_retryTimer != null) {
@@ -693,10 +714,8 @@ class MainActivity : AppCompatActivity() {
                     toggleAgentConnection(false)
                 }
             }
-            if (g_autoConsent) {
+            if (g_autoConsent && g_ScreenCaptureService?.isProjectionActive() == false) {
                 startProjection()
-            } else if (!g_autoConsent && g_ScreenCaptureService != null) {
-                stopProjection()
             }
         }
     }

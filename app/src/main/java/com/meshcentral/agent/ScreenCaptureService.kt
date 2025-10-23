@@ -28,12 +28,13 @@ import androidx.core.util.Pair
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import java.io.*
+import kotlin.concurrent.thread
 
 
 class ScreenCaptureService : Service() {
     private var mMediaProjection: MediaProjection? = null
-    private var mImageReader: ImageReader? = null
-    private var mHandler: Handler? = null
+    var mImageReader: ImageReader? = null
+    var mHandler: Handler? = null
     private var mDisplay: Display? = null
     private var mVirtualDisplay: VirtualDisplay? = null
     private var mDensity = 0
@@ -53,6 +54,13 @@ class ScreenCaptureService : Service() {
     private var oldcrcs : IntArray? = null
     private var newcrcs : IntArray? = null
 
+    var forceFullFrame = false
+    private var notificationBlinkTimer: CountDownTimer? = null
+    @Volatile private var projectionActive = false
+
+    fun isProjectionActive(): Boolean = projectionActive
+
+
     private inner class ImageAvailableListener : OnImageAvailableListener {
 
         override fun onImageAvailable(reader: ImageReader) {
@@ -61,118 +69,140 @@ class ScreenCaptureService : Service() {
                 return
             }
 
-            var bitmap: Bitmap? = null
-            var image: android.media.Image? = null
             if (mImageReader == null) return
 
+            // Drain available image to keep capture flowing
             try {
-                image = mImageReader!!.acquireLatestImage()
-                // Skip this image if null or websocket push-back is high
-                if ((image != null) && (checkDesktopTunnelPushback() < 65535) && (meshAgent?.tunnels?.getOrNull(0) != null)) {
-                    val planes: Array<Plane> = image.getPlanes()
-                    val buffer = planes[0].buffer
-                    val pixelStride = planes[0].pixelStride
-                    val rowStride = planes[0].rowStride
-                    val rowPadding = rowStride - pixelStride * mWidth
-
-                    // Create the bitmap
-                    bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888)
-                    bitmap!!.copyPixelsFromBuffer(buffer)
-
-                    // Resize the bitmap if needed
-                    if (g_desktop_scalingLevel != 1024) {
-                        val newWidth = (mWidth * g_desktop_scalingLevel) / 1024
-                        val newHeight = (mHeight * g_desktop_scalingLevel) / 1024
-                        bitmap = getResizedBitmap(bitmap, newWidth, newHeight)
-                    }
-
-                    // Setup or update the CRC buffer and tile information.
-                    val wt = (bitmap!!.width / 64)
-                    val ht = (bitmap.height / 64)
-                    if ((tilesFullWide != wt) || (tilesFullHigh != ht)) {
-                        tilesWide = wt;
-                        tilesHigh = ht;
-                        tilesFullWide = tilesWide
-                        tilesFullHigh = tilesHigh
-                        tilesRemainingWidth = (bitmap.width % 64);
-                        tilesRemainingHeight = (bitmap.height % 64);
-                        if (tilesRemainingWidth != 0) { tilesWide++; }
-                        if (tilesRemainingHeight != 0) { tilesHigh++; }
-                        tilesCount = (tilesWide * tilesHigh);
-                        oldcrcs = IntArray(tilesCount); // 64 x 64 tiles
-                        newcrcs = IntArray(tilesCount); // 64 x 64 tiles
-                        //println("New tile count: $tilesCount")
-                    }
-
-                    // Compute all tile CRC's
-                    computeAllCRCs(bitmap);
-
-                    // Compute how many tiles have changed
-                    var changedTiles : Int = 0;
-                    for (i in 0 until tilesCount) { if (oldcrcs!![i] != newcrcs!![i]) { changedTiles++; } }
-                    if (changedTiles > 0) {
-                        // If 85% of the all tiles have changed, send the entire screen
-                        if ((changedTiles * 100) >= (tilesCount * 85))
-                        {
-                            sendEntireImage(bitmap)
-                            for (i in 0 until tilesCount) { oldcrcs!![i] = newcrcs!![i]; }
-                        }
-                        else
-                        {
-                            // Send all changed tiles
-                            // This version has horizontal & vertical optimization, JPEG as wide as possible then as high as possible
-                            var sendx : Int = -1;
-                            var sendy : Int = 0;
-                            var sendw : Int = 0;
-                            for (i in 0 until tilesHigh)
-                            {
-                                for (j in 0 until tilesWide)
-                                {
-                                    val tileNumber : Int = (i * tilesWide) + j;
-                                    if (oldcrcs!![tileNumber] != newcrcs!![tileNumber])
-                                    {
-                                        oldcrcs!![tileNumber] = newcrcs!![tileNumber];
-                                        if (sendx == -1) { sendx = j; sendy = i; sendw = 1; } else { sendw += 1; }
-                                    }
-                                    else
-                                    {
-                                        if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
-                                    }
-                                }
-                                if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
-                            }
-                            if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
-                        }
-                    }
+                var image = mImageReader!!.acquireLatestImage()
+                if (image != null) {
+                    processImage(image)
+                    image.close()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            if (bitmap != null) { bitmap.recycle() }
-            if (image != null) { image.close() }
+        }
+    }
+    private val activeThreads = java.util.concurrent.atomic.AtomicInteger(0)
+    fun processImage(image: android.media.Image) {
+        var bitmap: Bitmap? = null
+        try {
+            val hasTunnels = (meshAgent?.tunnels?.size ?: 0) > 0
+            val shouldSend = hasTunnels && (checkDesktopTunnelPushback() < 65535)
+
+            val planes: Array<Plane> = image.getPlanes()
+            val buffer = planes[0].buffer
+            val pixelStride = planes[0].pixelStride
+            val rowStride = planes[0].rowStride
+            val rowPadding = rowStride - pixelStride * mWidth
+
+            // Create the bitmap
+            bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888)
+            bitmap.copyPixelsFromBuffer(buffer)
+
+            // Resize the bitmap if needed
+            if (g_desktop_scalingLevel != 1024) {
+                val newWidth = (mWidth * g_desktop_scalingLevel) / 1024
+                val newHeight = (mHeight * g_desktop_scalingLevel) / 1024
+                bitmap = getResizedBitmap(bitmap, newWidth, newHeight)
+            }
+
+            // Setup or update the CRC buffer and tile information.
+            val wt = (bitmap!!.width / 64)
+            val ht = (bitmap.height / 64)
+            if ((tilesFullWide != wt) || (tilesFullHigh != ht)) {
+                tilesWide = wt;
+                tilesHigh = ht;
+                tilesFullWide = tilesWide
+                tilesFullHigh = tilesHigh
+                tilesRemainingWidth = (bitmap.width % 64);
+                tilesRemainingHeight = (bitmap.height % 64);
+                if (tilesRemainingWidth != 0) { tilesWide++; }
+                if (tilesRemainingHeight != 0) { tilesHigh++; }
+                tilesCount = (tilesWide * tilesHigh);
+                oldcrcs = IntArray(tilesCount);
+                newcrcs = IntArray(tilesCount);
+            }
+
+            // Compute all tile CRC's
+            computeAllCRCs(bitmap);
+
+            // Compute how many tiles have changed
+            var changedTiles : Int = 0;
+            for (i in 0 until tilesCount) { if (oldcrcs!![i] != newcrcs!![i]) { changedTiles++; } }
+
+            if (changedTiles > 0 && shouldSend) {
+                if (forceFullFrame || (changedTiles * 100) >= (tilesCount * 85))
+                {
+                    val bitmapCopy = bitmap.copy(bitmap.config, false)
+                    if (bitmapCopy != null) {
+                        activeThreads.incrementAndGet()
+                        thread {
+                            sendEntireImage(bitmapCopy)
+                            bitmapCopy.recycle()
+                            val remaining = activeThreads.decrementAndGet()
+                        }
+                    }
+                    for (i in 0 until tilesCount) { oldcrcs!![i] = newcrcs!![i]; }
+                    forceFullFrame = false
+                }
+                else
+                {
+                    val bitmapCopy = bitmap.copy(bitmap.config, false)
+
+                    // Collect tile data to send
+                    data class TileToSend(val x: Int, val y: Int, val w: Int)
+                    val tilesToSend = mutableListOf<TileToSend>()
+
+                    var sendx : Int = -1;
+                    var sendy : Int = 0;
+                    var sendw : Int = 0;
+                    for (i in 0 until tilesHigh)
+                    {
+                        for (j in 0 until tilesWide)
+                        {
+                            val tileNumber : Int = (i * tilesWide) + j;
+                            if (oldcrcs!![tileNumber] != newcrcs!![tileNumber])
+                            {
+                                oldcrcs!![tileNumber] = newcrcs!![tileNumber];
+                                if (sendx == -1) { sendx = j; sendy = i; sendw = 1; } else { sendw += 1; }
+                            }
+                            else
+                            {
+                                if (sendx != -1) {
+                                    tilesToSend.add(TileToSend(sendx, sendy, sendw))
+                                    sendx = -1;
+                                }
+                            }
+                        }
+                        if (sendx != -1) {
+                            tilesToSend.add(TileToSend(sendx, sendy, sendw))
+                            sendx = -1;
+                        }
+                    }
+                    if (sendx != -1) {
+                        tilesToSend.add(TileToSend(sendx, sendy, sendw))
+                    }
+                    if (bitmapCopy != null) {
+                        // Send tiles in background thread
+                        thread {
+                            for (tile in tilesToSend) {
+                                sendSubBitmapRow(bitmapCopy, tile.x, tile.y, tile.w)
+                            }
+                            bitmapCopy.recycle()
+                        }
+                    }
+                }
+            }
+        } finally {
+            bitmap?.recycle()
         }
     }
 
     private fun sendSubBitmapRow(bm: Bitmap, x : Int, y : Int, w : Int) {
-        var h : Int = (y + 1)
-        var exit : Boolean = false
-        while (h < tilesHigh) {
-            // Check if the row is all different
-            for (xx in x until (x + w)) {
-                val tileNumber = (h * tilesWide) + xx;
-                if (oldcrcs!![tileNumber] == newcrcs!![tileNumber]) { exit = true; break; }
-            }
-            // If all different set the CRC's to the same, otherwise exit.
-            if (!exit) {
-                for (xx in x until (x + w)) {
-                    val tileNumber : Int = (h * tilesWide) + xx;
-                    oldcrcs!![tileNumber] = newcrcs!![tileNumber];
-                }
-            } else break;
-            h++
-        }
-        h -= y
-        sendSubImage(bm, x * 64, y * 64, w * 64, h * 64);
+        // Just send the single row of tiles without accessing CRCs
+        // The vertical optimization was causing race conditions
+        sendSubImage(bm, x * 64, y * 64, w * 64, 64);
     }
 
     private fun Adler32(n : Int, state: Int) : Int {
@@ -405,6 +435,7 @@ class ScreenCaptureService : Service() {
                 g_ScreenCaptureService = this
                 updateTunnelDisplaySize()
                 sendAgentConsole("Started display sharing")
+                projectionActive = true
             }
         }
     }
@@ -416,9 +447,13 @@ class ScreenCaptureService : Service() {
     }
 
     private fun stopProjection() {
+        if (!projectionActive) return
+        NotificationUtils.stopNotificationBlink()
         if (mHandler != null) {
             mHandler!!.post {
                 if (mMediaProjection != null) {
+                    try { mMediaProjection?.stop() } catch (_: Exception) {}
+                    projectionActive = false
                     mMediaProjection!!.stop()
                     g_ScreenCaptureService = null
                     sendAgentConsole("Stopped display sharing")
@@ -437,7 +472,7 @@ class ScreenCaptureService : Service() {
         updateTunnelDisplaySize()
 
         // Start capture reader
-        mImageReader = ImageReader.newInstance(mWidth, mHeight, PixelFormat.RGBA_8888, 2)
+        mImageReader = ImageReader.newInstance(mWidth, mHeight, PixelFormat.RGBA_8888, 5)
         // Register media projection stop callback
         mMediaProjection!!.registerCallback(this.MediaProjectionStopCallback(), mHandler)
         mVirtualDisplay = mMediaProjection!!.createVirtualDisplay(ScreenCaptureService.Companion.SCREENCAP_NAME, mWidth, mHeight,
@@ -478,7 +513,9 @@ class ScreenCaptureService : Service() {
         }
 
         private val virtualDisplayFlags: Int
-        private get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
+            private get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION
     }
 
     fun updateTunnelDisplaySize() {
@@ -529,6 +566,65 @@ class ScreenCaptureService : Service() {
             // If this is a connected desktop tunnel, send the data
             if ((t.state == 2) && (t.usage == 2) && (t._webSocket != null)) {
                 t._webSocket!!.send(data)
+            }
+        }
+    }
+
+
+
+    fun requestImmediateFrame() {
+        forceFullFrame = true
+        NotificationUtils.startNotificationBlink(this)
+
+        mHandler?.post {
+            try {
+                // First, try to get any existing image
+                val existingImage = mImageReader?.acquireLatestImage()
+                if (existingImage != null) {
+                    processImage(existingImage)
+                    existingImage.close()
+                    return@post
+                }
+                // No existing image - force VirtualDisplay to generate a new frame
+                // Request a new frame by briefly pausing and resuming the virtual display
+                // This forces Android to render a fresh frame
+                mVirtualDisplay?.surface?.let { surface ->
+                    // The virtual display should automatically generate frames
+                    // Set a small delay to allow the system to render
+                    mHandler?.postDelayed({
+                        val newImage = mImageReader?.acquireLatestImage()
+                        if (newImage != null) {
+                            processImage(newImage)
+                            newImage.close()
+                        } else {
+                            println("No frame available after delay")
+                        }
+                    }, 100) // Wait 100ms for frame to be rendered
+                }
+            } catch (e: Exception) {
+                println("requestImmediateFrame - Failed to request frame: ${e.message}")
+            }
+        }
+    }
+
+    fun onTunnelDisconnected() {
+        // Only reset state in autoconsent mode where service persists between connections
+        if (!g_autoConsent) {
+            println("Tunnel disconnected (normal mode), no state reset needed")
+            return
+        }
+
+        println("Tunnel disconnected (autoconsent mode), resetting state for next connection")
+        forceFullFrame = false
+
+        // Reset tile state to force full frame on next connect
+        tilesFullWide = 0
+        tilesFullHigh = 0
+
+        // Clear CRCs to ensure fresh comparison
+        if (oldcrcs != null) {
+            for (i in 0 until oldcrcs!!.size) {
+                oldcrcs!![i] = 0
             }
         }
     }
