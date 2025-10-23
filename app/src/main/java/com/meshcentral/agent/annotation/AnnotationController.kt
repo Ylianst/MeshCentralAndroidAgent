@@ -95,6 +95,10 @@ object AnnotationController {
                     put("op", "event")
                     put("event", "started")
                 })
+
+                if (ctx is Activity) {
+                    ctx.invalidateOptionsMenu()
+                }
             } catch (e: Exception) {
                 android.util.Log.e("AnnotationController", "Failed to start service: ${e.message}")
             }
@@ -112,6 +116,10 @@ object AnnotationController {
             put("op", "event")
             put("event", "stopped")
         })
+
+        if (ctx is Activity) {
+            ctx.invalidateOptionsMenu()
+        }
     }
 
     private fun openOverlaySettings(activity: Activity) {

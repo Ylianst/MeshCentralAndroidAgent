@@ -18,6 +18,10 @@ object AnnotationFeature {
         AnnotationController.hide(ctx)
     }
 
+    fun stopAnnotations(ctx: Context) {
+        AnnotationController.hide(ctx)
+    }
+
     fun capabilities(ctx: Context): Map<String, Any> = mapOf(
         "overlay" to "supported",
         "permission" to if (hasOverlayPermission(ctx)) "granted" else "denied",

@@ -25,6 +25,7 @@
     <string name="meshcentral" translatable="false">MeshCentral</string>
     <string name="sharescreen">Share Screen</string>
     <string name="stopsharescreen">Stop Screen Sharing</string>
+    <string name="stopannotations">Stop Annotations</string>
     <string name="displaysharing">Display is being shared</string>
     <string name="default_notification_channel_id">default</string>
     <string name="accept">Accept</string>

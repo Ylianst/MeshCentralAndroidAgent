@@ -36,6 +36,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.meshcentral.agent.annotation.AnnotationConsent
 import com.meshcentral.agent.annotation.AnnotationController
 import com.meshcentral.agent.annotation.AnnotationFeature
+import com.meshcentral.agent.annotation.AnnotationFeature.stopAnnotations
 import com.meshcentral.agent.annotation.AnnotationPrefs
 import com.meshcentral.agent.annotation.AnnotationServiceBus
 import org.json.JSONObject
@@ -231,6 +232,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             item9.isVisible = false
         }
+        var item10 = menu.findItem(R.id.action_stopannotations);
+        item10.isVisible = AnnotationServiceBus.isActive()
         return true
     }
 
@@ -262,6 +265,11 @@ class MainActivity : AppCompatActivity() {
         if (item.itemId == R.id.action_stopscreensharing) {
             // Stop projection
             stopProjection()
+        }
+
+        if (item.itemId == R.id.action_stopannotations) {
+            // Stop annotations
+            stopAnnotations(this)
         }
 
         if ((item.itemId == R.id.action_manual_setup_server) && (hardCodedServerLink == null)) {
