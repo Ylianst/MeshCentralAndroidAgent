@@ -275,11 +275,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             var imageView : ImageView? = null
             try { imageView = view?.findViewById<ImageView>(R.id.mainImageView) } catch (ex: Exception) {}
             if (imageView != null) {
-                imageView?.setImageResource(R.mipmap.ic_launcher_foreground)
-                val param = imageView?.layoutParams
+                imageView.setImageResource(R.mipmap.ic_launcher_foreground)
+                val param = imageView.layoutParams
                 if (param is ViewGroup.MarginLayoutParams) {
-                    (param as ViewGroup.MarginLayoutParams).setMargins(0, 0, 0, 0)
-                    imageView?.layoutParams = param
+                    param.setMargins(0, 0, 0, 0)
+                    imageView.layoutParams = param
                 }
             }
         }
@@ -288,11 +288,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             var imageView : ImageView? = null
             try { imageView = view?.findViewById<ImageView>(R.id.mainImageView) } catch (ex: Exception) {}
             if (imageView != null) {
-                imageView?.setImageResource(R.mipmap.ic_user)
-                val param = imageView?.layoutParams
+                imageView.setImageResource(R.mipmap.ic_user)
+                val param = imageView.layoutParams
                 if (param is ViewGroup.MarginLayoutParams) {
-                    (param as ViewGroup.MarginLayoutParams).setMargins(128, 128, 128, 128)
-                    imageView?.layoutParams = param
+                    param.setMargins(128, 128, 128, 128)
+                    imageView.layoutParams = param
                 }
             }
         }

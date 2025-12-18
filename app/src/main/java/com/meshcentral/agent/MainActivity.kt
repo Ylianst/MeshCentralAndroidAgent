@@ -2,7 +2,6 @@ package com.meshcentral.agent
 
 //import com.google.firebase.iid.FirebaseInstanceId
 import android.Manifest
-import android.app.Activity
 import android.app.AlertDialog
 import android.app.Notification
 import android.app.NotificationChannel
@@ -28,6 +27,9 @@ import android.view.Menu
 import android.view.MenuItem
 import android.widget.EditText
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -77,7 +79,6 @@ var agentCertificate : X509Certificate? = null
 var agentCertificateKey : PrivateKey? = null
 var pageUrl : String? = null
 var cameraPresent : Boolean = false
-var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
 var g_autoConnect : Boolean = true
 var g_autoConsent : Boolean = false
@@ -99,6 +100,58 @@ class MainActivity : AppCompatActivity() {
     lateinit var notificationChannel: NotificationChannel
     lateinit var notificationManager: NotificationManager
     lateinit var builder: Notification.Builder
+
+    // Activity Result Launcher for screen capture (replaces deprecated startActivityForResult)
+    private val screenCaptureLauncher: ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            println("screenCaptureLauncher, resultCode: ${result.resultCode}, data: ${result.data}")
+            if (result.resultCode == RESULT_OK) {
+                startService(ScreenCaptureService.getStartIntent(this, result.resultCode, result.data))
+                if (meshAgent?.tunnels?.getOrNull(0) != null) {
+                    val json = JSONObject()
+                    json.put("type", "console")
+                    json.put("msg", null)
+                    json.put("msgid", 0)
+                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
+                }
+            } else {
+                if (meshAgent?.tunnels?.getOrNull(0) != null) {
+                    val json = JSONObject()
+                    json.put("type", "console")
+                    json.put("msg", "denied")
+                    json.put("msgid", 2)
+                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
+                    meshAgent!!.tunnels[0].Stop()
+                }
+            }
+        }
+
+    // Pending activity data for intent sender results (file deletion permission)
+    private var pendingIntentSenderData: PendingActivityData? = null
+
+    // Activity Result Launcher for intent sender (replaces deprecated startIntentSenderForResult)
+    private val intentSenderLauncher: ActivityResultLauncher<IntentSenderRequest> =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            println("intentSenderLauncher, resultCode: ${result.resultCode}")
+            val pad = pendingIntentSenderData
+            if (pad != null) {
+                if (result.resultCode == RESULT_OK) {
+                    println("Approved: ${pad.url}, ${pad.where}, ${pad.args}")
+                    pad.tunnel.deleteFileEx(pad)
+                } else {
+                    println("Denied: ${pad.url}, ${pad.where}, ${pad.args}")
+                    pad.tunnel.deleteFileEx(pad)
+                }
+                pendingIntentSenderData = null
+            }
+        }
+
+    // Launch intent sender for file deletion permission (called from MeshTunnel)
+    fun launchIntentSenderForResult(intentSender: android.content.IntentSender, pad: PendingActivityData) {
+        pendingIntentSenderData = pad
+        val request = IntentSenderRequest.Builder(intentSender).build()
+        intentSenderLauncher.launch(request)
+    }
 
     init {
         Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
@@ -150,7 +203,7 @@ class MainActivity : AppCompatActivity() {
         */
 
         // See if we there open by a notification with a URL
-        var intentUrl : String? = intent.getStringExtra("url")
+        val intentUrl : String? = intent.getStringExtra("url")
         //println("Main Activity Create URL: $intentUrl")
         if (intentUrl != null) {
             intent.removeExtra("url")
@@ -161,7 +214,7 @@ class MainActivity : AppCompatActivity() {
                     g_auth_url = Uri.parse(intentUrl)
                     // If not connected, connect to the server now.
                     if (meshAgent == null) {
-                        toggleAgentConnection(false);
+                        toggleAgentConnection(false)
                     } else {
                         // Switch to 2FA auth screen
                         if (mainFragment != null) {
@@ -172,8 +225,8 @@ class MainActivity : AppCompatActivity() {
                 }
             } else if (intentUrl.lowercase().startsWith("http://") || intentUrl.lowercase().startsWith("https://")) {
                 // Open an HTTP or HTTPS URL.
-                var getintent: Intent = Intent(Intent.ACTION_VIEW, Uri.parse(intentUrl));
-                startActivity(getintent);
+                val getintent = Intent(Intent.ACTION_VIEW, Uri.parse(intentUrl))
+                startActivity(getintent)
             }
         }
 
@@ -190,7 +243,7 @@ class MainActivity : AppCompatActivity() {
 
     private val batteryInfoReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (meshAgent != null) { meshAgent?.batteryStateChanged(intent) }
+            meshAgent?.batteryStateChanged(intent)
         }
     }
 
@@ -201,26 +254,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        var item1 = menu.findItem(R.id.action_setup_server);
-        item1.isVisible = (visibleScreen == 1) && (hardCodedServerLink == null);
-        item1.isEnabled = cameraPresent;
-        var item2 = menu.findItem(R.id.action_clear_server);
-        item2.isVisible = (visibleScreen == 1) && (serverLink != null) && (hardCodedServerLink == null);
-        var item3 = menu.findItem(R.id.action_close);
-        item3.isVisible = (visibleScreen != 1);
-        var item4 = menu.findItem(R.id.action_sharescreen);
+        val item1 = menu.findItem(R.id.action_setup_server)
+        item1.isVisible = (visibleScreen == 1) && (hardCodedServerLink == null)
+        item1.isEnabled = cameraPresent
+        val item2 = menu.findItem(R.id.action_clear_server)
+        item2.isVisible = (visibleScreen == 1) && (serverLink != null) && (hardCodedServerLink == null)
+        val item3 = menu.findItem(R.id.action_close)
+        item3.isVisible = (visibleScreen != 1)
+        val item4 = menu.findItem(R.id.action_sharescreen)
         item4.isVisible = false // (g_ScreenCaptureService == null) && (meshAgent != null) && (meshAgent!!.state == 3)
-        var item5 = menu.findItem(R.id.action_stopscreensharing);
+        val item5 = menu.findItem(R.id.action_stopscreensharing)
         item5.isVisible = (g_ScreenCaptureService != null)
-        var item6 = menu.findItem(R.id.action_manual_setup_server);
+        val item6 = menu.findItem(R.id.action_manual_setup_server)
         item6.isVisible = (visibleScreen == 1) && (serverLink == null) && (hardCodedServerLink == null)
-        var item7 = menu.findItem(R.id.action_testAuth);
+        val item7 = menu.findItem(R.id.action_testAuth)
         item7.isVisible = false //(visibleScreen == 1) && (serverLink != null);
-        var item8 = menu.findItem(R.id.action_settings);
-        item8.isVisible = (visibleScreen == 1);
-        var item9 = menu.findItem(R.id.action_enablepushauthentication);
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
-            item9.isVisible = (notificationManager.areNotificationsEnabled() == false)
+        val item8 = menu.findItem(R.id.action_settings)
+        item8.isVisible = (visibleScreen == 1)
+        val item9 = menu.findItem(R.id.action_enablepushauthentication)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            item9.isVisible = (!notificationManager.areNotificationsEnabled())
         } else {
             item9.isVisible = false
         }
@@ -294,49 +347,6 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        println("onActivityResult, requestCode: $requestCode, resultCode: $resultCode, data: ${data.toString()}")
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == MainActivity.Companion.REQUEST_CODE) {
-            if (resultCode == RESULT_OK) {
-                startService(com.meshcentral.agent.ScreenCaptureService.getStartIntent(this, resultCode, data))
-                if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                    val json = JSONObject()
-                    json.put("type", "console")
-                    json.put("msg", null)
-                    json.put("msgid", 0)
-                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                }
-                return
-            } else {
-                if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                    val json = JSONObject()
-                    json.put("type", "console")
-                    json.put("msg", "denied")
-                    json.put("msgid", 2)
-                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                    meshAgent!!.tunnels[0].Stop()
-                }
-                return
-            }
-        }
-
-        var pad : PendingActivityData? = null
-        for (b in pendingActivities) { if (b.id == requestCode) { pad = b } }
-
-        if (pad != null) {
-            if (resultCode == Activity.RESULT_OK) {
-                println("Approved: ${pad.url}, ${pad.where}, ${pad.args}")
-                pad.tunnel.deleteFileEx(pad)
-            } else {
-                println("Denied: ${pad.url}, ${pad.where}, ${pad.args}")
-                pad.tunnel.deleteFileEx(pad)
-            }
-            pendingActivities.remove(pad)
-        }
-    }
-
     fun setMeshServerLink(x: String?) {
         if ((serverLink == x) || (hardCodedServerLink != null)) return
         if (meshAgent != null) { // Stop the agent
@@ -354,7 +364,7 @@ class MainActivity : AppCompatActivity() {
     // Open a URL in the web view fragment
     fun openUrl(xpageUrl: String) : Boolean {
         if (visibleScreen == 2) return false
-        pageUrl = xpageUrl;
+        pageUrl = xpageUrl
         if (visibleScreen == 1) {
             if (mainFragment != null) mainFragment?.moveToWebPage(xpageUrl)
         } else {
@@ -421,14 +431,14 @@ class MainActivity : AppCompatActivity() {
             val builder = AlertDialog.Builder(this)
             builder.setTitle(title)
             builder.setMessage(msg)
-            builder.setPositiveButton(android.R.string.ok) { _, _ -> run {} }
+            builder.setPositiveButton(android.R.string.ok) { _, _ -> kotlin.run {} }
             alert = builder.show()
         }
     }
 
     fun showToastMessage(msg: String) {
         this.runOnUiThread {
-            var toast = Toast.makeText(getApplicationContext(), msg, Toast.LENGTH_LONG)
+            val toast = Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG)
             toast?.setGravity(Gravity.CENTER, 0, 300)
             toast?.show()
         }
@@ -436,20 +446,20 @@ class MainActivity : AppCompatActivity() {
 
     fun getServerHost() : String? {
         if (serverLink == null) return null
-        var x : List<String> = serverLink!!.split(',')
-        var serverHost = x[0]
+        val x : List<String> = serverLink!!.split(',')
+        val serverHost = x[0]
         return serverHost.substring(5)
     }
 
     fun getServerHash() : String? {
         if (serverLink == null) return null
-        var x : List<String> = serverLink!!.split(',')
+        val x : List<String> = serverLink!!.split(',')
         return x[1]
     }
 
     fun getDevGroup() : String? {
         if (serverLink == null) return null
-        var x : List<String> = serverLink!!.split(',')
+        val x : List<String> = serverLink!!.split(',')
         return x[2]
     }
 
@@ -496,7 +506,7 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_ALL_PERMISSIONS) {
-            permissions.forEachIndexed { index, permission ->
+            permissions.forEachIndexed { index, _ ->
                 if (grantResults[index] == PackageManager.PERMISSION_DENIED) {
                     // Handle each denied permission if necessary
                 }
@@ -508,11 +518,11 @@ class MainActivity : AppCompatActivity() {
         //println("toggleAgentConnection")
         if ((meshAgent == null) && (serverLink != null)) {
             // Create and connect the agent
-            requestAllPermissions();
+            requestAllPermissions()
             if (agentCertificate == null) {
                 val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
-                var certb64 : String? = sharedPreferences?.getString("agentCert", null)
-                var keyb64 : String? = sharedPreferences?.getString("agentKey", null)
+                val certb64 : String? = sharedPreferences?.getString("agentCert", null)
+                val keyb64 : String? = sharedPreferences?.getString("agentKey", null)
                 if ((certb64 == null) || (keyb64 == null)) {
                     //println("Generating new certificates...")
 
@@ -522,8 +532,8 @@ class MainActivity : AppCompatActivity() {
                     val keypair = keyGen.generateKeyPair()
 
                     // Generate Serial Number
-                    var serial : BigInteger = BigInteger("12345678");
-                    try { serial = BigInteger.valueOf(Random().nextInt().toLong().absoluteValue) } catch (ex: Exception) {}
+                    var serial = BigInteger("12345678");
+                    try { serial = BigInteger.valueOf(Random().nextInt().toLong().absoluteValue) } catch (_: Exception) {}
 
                     // Create self signed certificate
                     val builder: X509v3CertificateBuilder = JcaX509v3CertificateBuilder(
@@ -619,9 +629,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun isMshStringValid(x: String):Boolean {
-        if (x.startsWith("mc://") == false)  return false
-        var xs = x.split(',')
-        if (xs.count() < 3) return false
+        if (!x.startsWith("mc://"))  return false
+        val xs = x.split(',')
+        if (xs.size < 3) return false
         if (xs[0].length < 8) return false
         if (xs[1].length < 3) return false
         if (xs[2].length < 3) return false
@@ -642,7 +652,7 @@ class MainActivity : AppCompatActivity() {
 
         // Set up the buttons
         builder.setPositiveButton(android.R.string.ok) { _, _ ->
-            var link = input.text.toString()
+            val link = input.text.toString()
             println("LINK: $link")
             if (isMshStringValid(link)) {
                 setMeshServerLink(link)
@@ -668,7 +678,7 @@ class MainActivity : AppCompatActivity() {
     fun startProjection() {
         if ((g_ScreenCaptureService != null) || (meshAgent == null) || (meshAgent!!.state != 3)) return
         val mProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        startActivityForResult(mProjectionManager.createScreenCaptureIntent(), MainActivity.Companion.REQUEST_CODE)
+        screenCaptureLauncher.launch(mProjectionManager.createScreenCaptureIntent())
     }
 
     // Stop screen sharing
@@ -683,7 +693,7 @@ class MainActivity : AppCompatActivity() {
             g_autoConnect = pm.getBoolean("pref_autoconnect", false)
             g_autoConsent = pm.getBoolean("pref_autoconsent", false)
             g_userDisconnect = false
-            if (g_autoConnect == false) {
+            if (!g_autoConnect) {
                 if (g_retryTimer != null) {
                     stopRetryTimer()
                     mainFragment?.refreshInfo()
@@ -735,7 +745,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val REQUEST_CODE = 100
         const val REQUEST_ALL_PERMISSIONS = 1
     }
 }

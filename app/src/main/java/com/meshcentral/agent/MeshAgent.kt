@@ -96,7 +96,8 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
 
             override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-                serverTlsCertHash = MessageDigest.getInstance("SHA-384").digest(chain?.get(0)?.encoded)
+                val encoded = chain?.get(0)?.encoded ?: return
+                serverTlsCertHash = MessageDigest.getInstance("SHA-384").digest(encoded)
             }
 
             override fun getAcceptedIssuers() = arrayOf<X509Certificate>()
@@ -167,34 +168,34 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         //println("onMessage: $text")
     }
 
-    override fun onMessage(webSocket: WebSocket, msg: ByteString) {
+    override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
         try {
-            //println("onBinaryMessage: ${msg.size}, ${msg.toByteArray().toHex()}")
-            if (msg.size < 2) return;
-            if ((connectionState == 3) && (msg[0].toInt() == 123)) {
+            //println("onBinaryMessage: ${bytes.size}, ${bytes.toByteArray().toHex()}")
+            if (bytes.size < 2) return;
+            if ((connectionState == 3) && (bytes[0].toInt() == 123)) {
                 // If we are authenticated, process JSON data
-                processAgentData(String(msg.toByteArray(), Charsets.UTF_8))
+                processAgentData(String(bytes.toByteArray(), Charsets.UTF_8))
                 return
             }
 
-            var cmd : Int = (msg[0].toInt() shl 8) + msg[1].toInt()
-            //println("Cmd $cmd, Size: ${msg.size}")
+            var cmd : Int = (bytes[0].toInt() shl 8) + bytes[1].toInt()
+            //println("Cmd $cmd, Size: ${bytes.size}")
             when (cmd) {
                 1 -> {
                     // Server authentication request
-                    if (msg.size != 98) return;
-                    var serverCertHash = msg.substring(2, 50).toByteArray()
+                    if (bytes.size != 98) return;
+                    var serverCertHash = bytes.substring(2, 50).toByteArray()
                     if (!serverCertHash.contentEquals(serverTlsCertHash!!)) {
                         println("Server Hash Mismatch, given=${serverCertHash.toHex()}, computed=${serverTlsCertHash?.toHex()}")
                         stopSocket()
                         return
                     }
-                    serverNonce = msg.substring(50).toByteArray()
+                    serverNonce = bytes.substring(50).toByteArray()
 
                     // Hash the server cert hash, server nonce and client nonce and sign the result
                     val sig = Signature.getInstance("SHA384withRSA")
                     sig.initSign(agentCertificateKey)
-                    sig.update(msg.substring(2).toByteArray().plus(nonce!!))
+                    sig.update(bytes.substring(2).toByteArray().plus(nonce!!))
                     val signature = sig.sign()
 
                     // Construct the response [2, sideOfCert, Cert, Signature]
@@ -210,8 +211,8 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 }
                 2 -> {
                     // Server agent certificate
-                    var xcertLen: Int = (msg[2].toUByte().toInt() shl 8) + msg[3].toUByte().toInt()
-                    var xcertBytes = msg.substring(4, 4 + xcertLen)
+                    var xcertLen: Int = (bytes[2].toUByte().toInt() shl 8) + bytes[3].toUByte().toInt()
+                    var xcertBytes = bytes.substring(4, 4 + xcertLen)
                     var xagentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
                             ByteArrayInputStream(xcertBytes.toByteArray())
                     ) as X509Certificate
@@ -232,7 +233,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     val sig = Signature.getInstance("SHA384withRSA")
                     sig.initVerify(xagentCertificate)
                     sig.update(signBlock)
-                    if (!sig.verify(msg.substring(4 + xcertLen).toByteArray())) {
+                    if (!sig.verify(bytes.substring(4 + xcertLen).toByteArray())) {
                         println("Invalid Server Signature"); stopSocket(); return
                     }
 
@@ -410,7 +411,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                             /*
                             {"action":"msg",
                             "type":"tunnel",
-                            "value":"*\/meshrelay.ashx?...",
+                            "value":"*\/meshrelay.ashx?...\",
                             "usage":5,
                             "servertlshash":"97eaf674eab131d3775f12cfa9c978d185a0e9caaf3a854bf0eb4ff94c2d6c53ca3dc456da149002804666fbbdae2fc9",
                             "soptions":{
@@ -634,7 +635,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 var x = JSONObject()
                 x.put("address", j.address.hostAddress)
                 if (n.hardwareAddress != null) {
-                    var mac = n.hardwareAddress.toHex().toUpperCase()
+                    var mac = n.hardwareAddress.toHex().uppercase()
                     x.put("mac", mac.substring(0, 2) + ":" + mac.substring(2, 4) + ":" + mac.substring(4, 6) + ":" + mac.substring(6, 8) + ":" + mac.substring(8, 10) + ":" + mac.substring(10, 12))
                 }
                 if (n.isUp) {
@@ -642,7 +643,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 } else {
                     x.put("status", "down")
                 }
-                if (j.address.hostAddress.indexOf(':') >= 0) {
+                if (j.address.hostAddress?.indexOf(':') ?: -1 >= 0) {
                     x.put("family", "IPv6")
                 } else {
                     x.put("family", "IPv4")
@@ -911,12 +912,13 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     } catch (e: Exception) {
                     }
                     if ((t > 0) && (t <= 10000)) {
-                        val v = parent.getApplicationContext()
-                                .getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                        @Suppress("DEPRECATION")
+                        val v = parent.applicationContext
+                                .getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
                         if (v == null) {
                             r = "Not supported"
                         } else {
-                            // Vibrate for 500 milliseconds
+                            // Vibrate for t milliseconds
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                 v.vibrate(
                                         VibrationEffect.createOneShot(
@@ -925,6 +927,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                                         )
                                 )
                             } else {
+                                @Suppress("DEPRECATION")
                                 v.vibrate(t)
                             }
                             r = "ok"
@@ -938,7 +941,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 if (splitCmd.size < 2) {
                     r = "Usage:\r\n  flash [milliseconds]";
                 } else if (splitCmd.size >= 2) {
-                    var isFlashAvailable = parent.getApplicationContext().getPackageManager()
+                    var isFlashAvailable = parent.applicationContext.packageManager
                             .hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT);
                     if (!isFlashAvailable) {
                         r = "Flash not available"
@@ -949,9 +952,9 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                         } catch (e: Exception) {
                         }
                         if ((t > 0) && (t <= 10000)) {
-                            var mCameraManager = parent.getApplicationContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                            var mCameraManager = parent.applicationContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
                             try {
-                                var mCameraId = mCameraManager.getCameraIdList()[0];
+                                var mCameraId = mCameraManager.cameraIdList[0];
                                 mCameraManager.setTorchMode(mCameraId, true);
                                 thread {
                                     Thread.sleep(t)

@@ -17,6 +17,7 @@ import android.media.ImageReader
 import android.media.ImageReader.OnImageAvailableListener
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.os.CountDownTimer
 import android.os.Handler
 import android.os.IBinder
@@ -77,7 +78,7 @@ class ScreenCaptureService : Service() {
 
                     // Create the bitmap
                     bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888)
-                    bitmap!!.copyPixelsFromBuffer(buffer)
+                    bitmap.copyPixelsFromBuffer(buffer)
 
                     // Resize the bitmap if needed
                     if (g_desktop_scalingLevel != 1024) {
@@ -349,7 +350,7 @@ class ScreenCaptureService : Service() {
         object : Thread() {
             override fun run() {
                 Looper.prepare()
-                mHandler = Handler()
+                mHandler = Handler(Looper.myLooper()!!)
                 Looper.loop()
             }
         }.start()
@@ -362,7 +363,12 @@ class ScreenCaptureService : Service() {
             startForeground(notification.first!!, notification.second)
             // Start projection
             val resultCode = intent.getIntExtra(ScreenCaptureService.Companion.RESULT_CODE, Activity.RESULT_CANCELED)
-            val data = intent.getParcelableExtra<Intent>(ScreenCaptureService.Companion.DATA)
+            val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(ScreenCaptureService.Companion.DATA, Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(ScreenCaptureService.Companion.DATA)
+            }
             startProjection(resultCode, data)
         } else if (ScreenCaptureService.Companion.isStopCommand(intent)) {
             stopProjection()
@@ -390,6 +396,7 @@ class ScreenCaptureService : Service() {
                     val displayManager = applicationContext.getSystemService(DISPLAY_SERVICE) as DisplayManager
                     mDisplay = displayManager.getDisplay(Display.DEFAULT_DISPLAY)
                 } else {
+                    @Suppress("DEPRECATION")
                     mDisplay = windowManager.defaultDisplay
                 }
 
