@@ -156,8 +156,8 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         parent.removeTunnel(this) // Notify the parent that this tunnel is done
 
         // Check if there are no more remote desktop tunnels
-        if ((usage == 2) && (g_ScreenCaptureService != null)) {
-            g_ScreenCaptureService!!.checkNoMoreDesktopTunnels()
+        if (usage == 2) {
+            AgentController.checkNoMoreDesktopTunnels()
         }
     }
 
@@ -205,24 +205,30 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 usage = xusage; // 2 = Desktop, 5 = Files, 10 = File transfer
                 state = 2
 
+                AgentController.refreshInfo()
+
                 // Start the connection time except if this is a file transfer
                 if (usage != 10) {
                     //println("Connected usage $usage")
                     startConnectionTimer()
                     if (usage == 2) {
                         // If this is a remote desktop usage...
-                        if (!g_autoConsent && g_ScreenCaptureService == null) {
+                        if (!g_autoConsent && !AgentController.isRemoteDesktopRunning()) {
                             // asking for consent
                             if (meshAgent?.tunnels?.getOrNull(0) != null) {
                                 val json = JSONObject()
+                                val msg = if (!AgentController.isAccessibilityServiceEnabled() && g_mainActivity == null) {
+                                    "Open the Android app to approve screen capture, or enable Accessibility Remote Control for unattended desktop."
+                                } else {
+                                    "Waiting for user to grant access..."
+                                }
                                 json.put("type", "console")
-                                json.put("msg", "Waiting for user to grant access...")
+                                json.put("msg", msg)
                                 json.put("msgid", 1)
                                 meshAgent!!.tunnels[0].sendCtrlResponse(json)
                             }
                         }
-                        if (g_ScreenCaptureService == null) {
-                            // Request media projection
+                        if (!AgentController.isRemoteDesktopRunning()) {
                             parent.parent.startProjection()
                         } else {
                             if (meshAgent?.tunnels?.getOrNull(0) != null) {
@@ -232,8 +238,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                                 json.put("msgid", 0)
                                 meshAgent!!.tunnels[0].sendCtrlResponse(json)
                             }
-                            // Send the display size
+                            // Send the display size and push a full frame of the current screen so the
+                            // reconnecting viewer sees it immediately instead of waiting for a change.
                             updateDesktopDisplaySize()
+                            AgentController.requestDesktopRefresh()
                         }
                     }
                 } else {
@@ -310,10 +318,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     private fun processBinaryDesktopCmd(cmd : Int, cmdsize: Int, msg: ByteString) {
         when (cmd) {
             1 -> { // Legacy key input
-                // Nop
+                AgentController.handleDesktopKeyCommand(cmd, msg)
             }
             2 -> { // Mouse input
-                // Nop
+                AgentController.handleDesktopMouseCommand(msg)
             }
             5 -> { // Remote Desktop Settings
                 if (cmdsize < 6) return
@@ -325,14 +333,17 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 updateDesktopDisplaySize()
             }
             6 -> { // Refresh
-                // Nop
+                AgentController.requestDesktopRefresh()
                 println("Desktop Refresh")
             }
             8 -> { // Pause
                 // Nop
             }
             85 -> { // Unicode key input
-                // Nop
+                AgentController.handleDesktopKeyCommand(cmd, msg)
+            }
+            15 -> { // Touch input
+                AgentController.handleDesktopTouchCommand(msg)
             }
             87 -> { // Input Lock
                 // Nop
@@ -344,12 +355,12 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     fun updateDesktopDisplaySize() {
-        if ((g_ScreenCaptureService == null) || (_webSocket == null)) return
-        //println("updateDesktopDisplaySize: ${g_ScreenCaptureService!!.mWidth} x ${g_ScreenCaptureService!!.mHeight}")
+        val provider = AgentController.activeRemoteDesktopProvider()
+        if ((provider == null) || (_webSocket == null)) return
 
         // Get the display size
-        var mWidth : Int = g_ScreenCaptureService!!.mWidth
-        var mHeight : Int = g_ScreenCaptureService!!.mHeight
+        var mWidth : Int = provider.width
+        var mHeight : Int = provider.height
 
         // Scale the display if needed
         if (g_desktop_scalingLevel != 1024) {
@@ -372,7 +383,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
 
     // Cause some data to be sent over the websocket control channel every 2 minutes to keep it open
     private fun startConnectionTimer() {
-        parent.parent.runOnUiThread {
+        parent.parent.runOnHostThread {
             connectionTimer = object: CountDownTimer(120000000, 120000) {
                 override fun onTick(millisUntilFinished: Long) {
                     if (_webSocket != null) {
@@ -453,7 +464,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     }
                 } else {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        val resolver: ContentResolver = parent.parent.getContentResolver()
+                        val resolver: ContentResolver = parent.parent.contentResolver
                         val contentValues = ContentValues()
                         var fileUri: Uri? = null
                         contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -561,7 +572,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 r.put(f)
             }
         } else {
-        val cursor: Cursor? = parent.parent.getContentResolver().query(
+        val cursor: Cursor? = parent.parent.contentResolver.query(
                 uri,
                 projection,
                 null,
@@ -625,7 +636,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 fileDeleteResponse(req, false) // Send failure
             }
         } else {
-            val cursor: Cursor? = parent.parent.getContentResolver().query(
+            val cursor: Cursor? = parent.parent.contentResolver.query(
                 uri,
                 projection,
                 null,
@@ -650,7 +661,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 }
                 for (i in 0 until filenames.length()) {
                     try {
-                        parent.parent.contentResolver.delete(fileUriArray[i],null,null)
+                            parent.parent.contentResolver.delete(fileUriArray[i],null,null)
                         fileDeleteResponse(req, true) // Send success
                     } catch (securityException: SecurityException) {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -665,7 +676,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
 
                             // Launch the activity
                             val intentSender = recoverableSecurityException.userAction.actionIntent.intentSender
-                            parent.parent.startIntentSenderForResult(
+                            val launched = parent.parent.launchIntentSenderForResult(
                                 intentSender,
                                 activityCode,
                                 null,
@@ -674,6 +685,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                                 0,
                                 null
                             )
+                            if (!launched) {
+                                pendingActivities.remove(pad)
+                                fileDeleteResponse(req, false)
+                            }
                         } else {
                             fileDeleteResponse(req, false) // Send fail
                         }
@@ -721,7 +736,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 val contentUrl = Uri.fromFile(file)
                 try {
                     // Serve the file
-                    parent.parent.getContentResolver().openInputStream(contentUrl).use { stream ->
+                    parent.parent.contentResolver.openInputStream(contentUrl).use { stream ->
                             // Perform operation on stream
                             var buf = ByteArray(65535)
                             var len : Int
@@ -741,7 +756,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 // file does not exist
             }
         } else {
-            val cursor: Cursor? = parent.parent.getContentResolver().query(
+            val cursor: Cursor? = parent.parent.contentResolver.query(
                     uri,
                     projection,
                     null,
@@ -765,7 +780,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         parent.logServerEventEx(106, eventArgs, "Download: ${filename}, Size: $fileSize", serverData);
 
                         // Serve the file
-                        parent.parent.getContentResolver().openInputStream(contentUrl).use { stream ->
+                        parent.parent.contentResolver.openInputStream(contentUrl).use { stream ->
                             // Perform operation on stream
                             var buf = ByteArray(65535)
                             var len : Int

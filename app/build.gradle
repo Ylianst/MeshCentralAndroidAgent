@@ -4,20 +4,25 @@ plugins {
     id 'com.google.gms.google-services'
 }
 
+def meshDevBuild = (project.findProperty("meshDevBuild") ?: new Date().format("yyyyMMddHHmm")).toString()
+
 android {
     defaultConfig {
         compileSdk 34
         targetSdk 34
         applicationId "com.meshcentral.agent2"
         minSdk 23
-        versionCode 28
-        versionName "1.0.21"
+        versionCode 29
+        versionName "1.0.22"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        def enterpriseEnforced = (project.findProperty("meshEnterpriseEnforced") ?: "false").toString().toBoolean()
+        buildConfigField "boolean", "ENTERPRISE_ENFORCED", enterpriseEnforced.toString()
     }
 
     buildTypes {
         debug {
             debuggable true
+            versionNameSuffix "-dev.$meshDevBuild"
         }
         release {
             // Enables code shrinking, obfuscation, and optimization for only
@@ -44,6 +49,9 @@ android {
     kotlinOptions {
         jvmTarget = '1.8'
     }
+    buildFeatures {
+        buildConfig true
+    }
     namespace 'com.meshcentral.agent'
 }
 
@@ -56,7 +64,7 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.navigation:navigation-fragment-ktx:2.7.7'
     implementation 'androidx.navigation:navigation-ui-ktx:2.7.7'
-    implementation 'com.budiyev.android:code-scanner:2.1.0'
+    implementation 'com.github.yuriy-budiyev:code-scanner:2.3.2'
     implementation 'com.karumi:dexter:6.2.2'
     implementation 'com.squareup.okhttp3:okhttp:4.9.0'
     implementation 'com.madgag.spongycastle:bcpkix-jdk15on:1.58.0.0'

@@ -26,11 +26,10 @@ import android.view.OrientationEventListener
 import android.view.WindowManager
 import androidx.core.util.Pair
 import okio.ByteString
-import okio.ByteString.Companion.toByteString
-import java.io.*
+import kotlin.math.max
 
 
-class ScreenCaptureService : Service() {
+class ScreenCaptureService : Service(), RemoteDesktopProvider {
     private var mMediaProjection: MediaProjection? = null
     private var mImageReader: ImageReader? = null
     private var mHandler: Handler? = null
@@ -41,247 +40,69 @@ class ScreenCaptureService : Service() {
     private var mOrientationChangeCallback: ScreenCaptureService.OrientationChangeCallback? = null
     var mWidth = 0
     var mHeight = 0
+    private var forceFullFrame = false
+    private val encoder = DesktopFrameEncoder()
+    private var lastFrameBitmap: Bitmap? = null
 
-    // Tile data
-    private var tilesWide : Int = 0
-    private var tilesHigh : Int = 0
-    private var tilesFullWide : Int = 0
-    private var tilesFullHigh : Int = 0
-    private var tilesRemainingWidth : Int = 0
-    private var tilesRemainingHeight : Int = 0
-    private var tilesCount : Int = 0
-    private var oldcrcs : IntArray? = null
-    private var newcrcs : IntArray? = null
+    override val isRunning: Boolean
+        get() = mMediaProjection != null
+
+    override val width: Int
+        get() = mWidth
+
+    override val height: Int
+        get() = mHeight
 
     private inner class ImageAvailableListener : OnImageAvailableListener {
 
         override fun onImageAvailable(reader: ImageReader) {
-            if ((meshAgent == null) && (g_mainActivity != null)) {
-                g_mainActivity!!.stopProjection()
+            if (meshAgent == null) {
+                AgentController.stopProjection()
                 return
             }
-
-            var bitmap: Bitmap? = null
+            val imageReader = mImageReader ?: return
             var image: android.media.Image? = null
-            if (mImageReader == null) return
-
             try {
-                image = mImageReader!!.acquireLatestImage()
-                // Skip this image if null or websocket push-back is high
-                if ((image != null) && (checkDesktopTunnelPushback() < 65535) && (meshAgent?.tunnels?.getOrNull(0) != null)) {
-                    val planes: Array<Plane> = image.getPlanes()
-                    val buffer = planes[0].buffer
-                    val pixelStride = planes[0].pixelStride
-                    val rowStride = planes[0].rowStride
-                    val rowPadding = rowStride - pixelStride * mWidth
-
-                    // Create the bitmap
-                    bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888)
-                    bitmap!!.copyPixelsFromBuffer(buffer)
-
-                    // Resize the bitmap if needed
-                    if (g_desktop_scalingLevel != 1024) {
-                        val newWidth = (mWidth * g_desktop_scalingLevel) / 1024
-                        val newHeight = (mHeight * g_desktop_scalingLevel) / 1024
-                        bitmap = getResizedBitmap(bitmap, newWidth, newHeight)
-                    }
-
-                    // Setup or update the CRC buffer and tile information.
-                    val wt = (bitmap!!.width / 64)
-                    val ht = (bitmap.height / 64)
-                    if ((tilesFullWide != wt) || (tilesFullHigh != ht)) {
-                        tilesWide = wt;
-                        tilesHigh = ht;
-                        tilesFullWide = tilesWide
-                        tilesFullHigh = tilesHigh
-                        tilesRemainingWidth = (bitmap.width % 64);
-                        tilesRemainingHeight = (bitmap.height % 64);
-                        if (tilesRemainingWidth != 0) { tilesWide++; }
-                        if (tilesRemainingHeight != 0) { tilesHigh++; }
-                        tilesCount = (tilesWide * tilesHigh);
-                        oldcrcs = IntArray(tilesCount); // 64 x 64 tiles
-                        newcrcs = IntArray(tilesCount); // 64 x 64 tiles
-                        //println("New tile count: $tilesCount")
-                    }
-
-                    // Compute all tile CRC's
-                    computeAllCRCs(bitmap);
-
-                    // Compute how many tiles have changed
-                    var changedTiles : Int = 0;
-                    for (i in 0 until tilesCount) { if (oldcrcs!![i] != newcrcs!![i]) { changedTiles++; } }
-                    if (changedTiles > 0) {
-                        // If 85% of the all tiles have changed, send the entire screen
-                        if ((changedTiles * 100) >= (tilesCount * 85))
-                        {
-                            sendEntireImage(bitmap)
-                            for (i in 0 until tilesCount) { oldcrcs!![i] = newcrcs!![i]; }
-                        }
-                        else
-                        {
-                            // Send all changed tiles
-                            // This version has horizontal & vertical optimization, JPEG as wide as possible then as high as possible
-                            var sendx : Int = -1;
-                            var sendy : Int = 0;
-                            var sendw : Int = 0;
-                            for (i in 0 until tilesHigh)
-                            {
-                                for (j in 0 until tilesWide)
-                                {
-                                    val tileNumber : Int = (i * tilesWide) + j;
-                                    if (oldcrcs!![tileNumber] != newcrcs!![tileNumber])
-                                    {
-                                        oldcrcs!![tileNumber] = newcrcs!![tileNumber];
-                                        if (sendx == -1) { sendx = j; sendy = i; sendw = 1; } else { sendw += 1; }
-                                    }
-                                    else
-                                    {
-                                        if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
-                                    }
-                                }
-                                if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
-                            }
-                            if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
-                        }
-                    }
-                }
+                image = imageReader.acquireLatestImage()
+                if (image != null) processImage(image)
             } catch (e: Exception) {
                 e.printStackTrace()
-            }
-            if (bitmap != null) { bitmap.recycle() }
-            if (image != null) { image.close() }
-        }
-    }
-
-    private fun sendSubBitmapRow(bm: Bitmap, x : Int, y : Int, w : Int) {
-        var h : Int = (y + 1)
-        var exit : Boolean = false
-        while (h < tilesHigh) {
-            // Check if the row is all different
-            for (xx in x until (x + w)) {
-                val tileNumber = (h * tilesWide) + xx;
-                if (oldcrcs!![tileNumber] == newcrcs!![tileNumber]) { exit = true; break; }
-            }
-            // If all different set the CRC's to the same, otherwise exit.
-            if (!exit) {
-                for (xx in x until (x + w)) {
-                    val tileNumber : Int = (h * tilesWide) + xx;
-                    oldcrcs!![tileNumber] = newcrcs!![tileNumber];
-                }
-            } else break;
-            h++
-        }
-        h -= y
-        sendSubImage(bm, x * 64, y * 64, w * 64, h * 64);
-    }
-
-    private fun Adler32(n : Int, state: Int) : Int {
-        var a = state shr 16;
-        var b = state and 0xFFFF;
-        a = (a + n) % 65521
-        b = (b + a) % 65521
-        return (b shl 16) + a
-    }
-
-    // Compute all CRC's
-    private fun computeAllCRCs(bm: Bitmap) {
-        // Clear all CRC's
-        for (i in 0 until tilesCount) { newcrcs!![i] = 1 }
-
-        // Compute all of the CRC's
-        for (y in 0 until tilesHigh) {
-            var h : Int = 64;
-            if (((y * 64) + 64) > bm.height) { h = (bm.height - (y * 64)) }
-            for (x in 0 until tilesWide) {
-                var w : Int = 64;
-                if (((x * 64) + 64) > bm.width) { w = (bm.width - (x * 64)) }
-                val t = (y * tilesWide) + x
-                val pixels = IntArray(w * h)
-                bm.getPixels(pixels, 0, w, x * 64, y * 64, w, h)
-                for (i in 0 until pixels.size) { newcrcs!![t] = Adler32(pixels[i], newcrcs!![t]) }
+            } finally {
+                image?.close()
             }
         }
     }
 
-    // Send a sub bitmap
-    private fun sendSubImage(bm: Bitmap, x: Int, y: Int, w: Int, h :Int) {
-        var ww = w;
-        var hh = h;
-        if (x + w > bm.width) { ww = (bm.width - x) }
-        if (y + h > bm.height) { hh = (bm.height - y) }
-        // Extract the sub bitmap if needed
-        val cropedBitmap: Bitmap = Bitmap.createBitmap(bm, x, y, ww, hh)
-        // Write bitmap to a memory and build a jumbo command
-        var bytesOut = ByteArrayOutputStream()
-        var dos = DataOutputStream(bytesOut)
-        dos.writeShort(27) // Jumbo command
-        dos.writeShort(8) // Jumbo command size
-        dos.writeInt(0) // Next command size (0 for now)
-        dos.writeShort(3) // Image command
-        dos.writeShort(0) // Image command size, 0 since jumbo is used
-        dos.writeShort(x) // X
-        dos.writeShort(y) // Y
-        if (g_desktop_imageType == 4) { // WebP
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
-            } else {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
-                } else {
-                    cropedBitmap.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
-                }
-            }
-        } else if (g_desktop_imageType == 2) { // PNG
-            cropedBitmap.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
-        } else { // JPEG (Default)
-            cropedBitmap.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
+    private fun processImage(image: android.media.Image) {
+        if ((checkDesktopTunnelPushback() >= 65535) || (meshAgent?.tunnels?.getOrNull(0) == null)) return
+
+        val planes: Array<Plane> = image.getPlanes()
+        val buffer = planes[0].buffer
+        val pixelStride = planes[0].pixelStride
+        val rowStride = planes[0].rowStride
+        val rowPadding = rowStride - pixelStride * mWidth
+
+        var bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888)
+        bitmap.copyPixelsFromBuffer(buffer)
+
+        if (g_desktop_scalingLevel != 1024 && g_desktop_scalingLevel > 0) {
+            val newWidth = max(1, (mWidth * g_desktop_scalingLevel) / 1024)
+            val newHeight = max(1, (mHeight * g_desktop_scalingLevel) / 1024)
+            bitmap = getResizedBitmap(bitmap, newWidth, newHeight) ?: bitmap
         }
-        cropedBitmap.recycle()
-        var data = bytesOut.toByteArray()
-        var cmdSize : Int = (data.size - 8)
-        data[4] = (cmdSize shr 24).toByte()
-        data[5] = (cmdSize shr 16).toByte()
-        data[6] = (cmdSize shr 8).toByte()
-        data[7] = (cmdSize).toByte()
-        sendDesktopTunnelData(data.toByteString()) // Send the data to all remote desktop tunnels
+
+        if (forceFullFrame) {
+            encoder.requestFullFrame()
+            forceFullFrame = false
+        }
+        encoder.encode(bitmap) { AgentController.sendDesktopTunnelData(it) }
+
+        if (lastFrameBitmap !== bitmap) {
+            lastFrameBitmap?.recycle()
+            lastFrameBitmap = bitmap
+        }
     }
 
-    private fun sendEntireImage(bm: Bitmap) {
-        // Write bitmap to a memory and build a jumbo command
-        var bytesOut = ByteArrayOutputStream()
-        var dos = DataOutputStream(bytesOut)
-        dos.writeShort(27) // Jumbo command
-        dos.writeShort(8) // Jumbo command size
-        dos.writeInt(0) // Next command size (0 for now)
-        dos.writeShort(3) // Image command
-        dos.writeShort(0) // Image command size, 0 since jumbo is used
-        dos.writeShort(0) // X
-        dos.writeShort(0) // Y
-        if (g_desktop_imageType == 4) { // WebP
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                bm.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
-            } else {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    bm.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
-                } else {
-                    bm.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
-                }
-            }
-        } else if (g_desktop_imageType == 2) { // PNG
-            bm.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
-        } else { // JPEG (Default)
-            bm.compress(Bitmap.CompressFormat.JPEG, g_desktop_compressionLevel, dos)
-        }
-        var data = bytesOut.toByteArray()
-        var cmdSize : Int = (data.size - 8)
-        data[4] = (cmdSize shr 24).toByte()
-        data[5] = (cmdSize shr 16).toByte()
-        data[6] = (cmdSize shr 8).toByte()
-        data[7] = (cmdSize).toByte()
-        sendDesktopTunnelData(data.toByteString()) // Send the data to all remote desktop tunnels
-    }
-
-    // Resize a bitmap
     private fun getResizedBitmap(bm: Bitmap, newWidth: Int, newHeight: Int): Bitmap? {
         val width = bm.width
         val height = bm.height
@@ -403,6 +224,7 @@ class ScreenCaptureService : Service() {
                 }
 
                 g_ScreenCaptureService = this
+                g_remoteDesktopProvider = this
                 updateTunnelDisplaySize()
                 sendAgentConsole("Started display sharing")
             }
@@ -421,7 +243,15 @@ class ScreenCaptureService : Service() {
                 if (mMediaProjection != null) {
                     mMediaProjection!!.stop()
                     g_ScreenCaptureService = null
+                    if (g_remoteDesktopProvider === this) {
+                        g_remoteDesktopProvider = null
+                    }
+                    lastFrameBitmap?.recycle()
+                    lastFrameBitmap = null
                     sendAgentConsole("Stopped display sharing")
+                    // The globals are cleared asynchronously on this handler thread, so refresh the
+                    // UI now that capture has actually stopped (hides the "Stop Screen Sharing" item).
+                    AgentController.refreshInfo()
                 }
             }
         }
@@ -478,7 +308,7 @@ class ScreenCaptureService : Service() {
         }
 
         private val virtualDisplayFlags: Int
-        private get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
+            get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
     }
 
     fun updateTunnelDisplaySize() {
@@ -491,21 +321,7 @@ class ScreenCaptureService : Service() {
     }
 
     fun checkNoMoreDesktopTunnels() {
-        if (meshAgent == null) return;
-        var desktopTunnelCloud = 0
-        for (t in meshAgent!!.tunnels) {
-            // If this is a connected desktop tunnel, count it
-            if ((t.state == 2) && (t.usage == 2)) { desktopTunnelCloud++ }
-        }
-        if (desktopTunnelCloud == 0) {
-            // If there are no more desktop tunnels, stop projection
-            if (!g_autoConsent) {
-                g_mainActivity!!.stopProjection()
-            } else { // reset the tilesFullWide and tilesFullHigh so on next connect it will send the whole image rather than changed tiles
-                tilesFullWide = 0
-                tilesFullHigh = 0
-            }
-        }
+        AgentController.checkNoMoreDesktopTunnels()
     }
 
     // Get the maximum outbound queue size of all remote desktop sockets
@@ -524,12 +340,55 @@ class ScreenCaptureService : Service() {
 
     // Send data to all remote desktop sockets
     fun sendDesktopTunnelData(data: ByteString) {
-        if (meshAgent == null) return;
-        for (t in meshAgent!!.tunnels) {
-            // If this is a connected desktop tunnel, send the data
-            if ((t.state == 2) && (t.usage == 2) && (t._webSocket != null)) {
-                t._webSocket!!.send(data)
-            }
+        AgentController.sendDesktopTunnelData(data)
+    }
+
+    override fun requestFullFrame() {
+        val handler = mHandler
+        if (handler == null) {
+            forceFullFrame = true
+            return
+        }
+        handler.post {
+            forceFullFrame = true
+            encoder.requestFullFrame()
+            pushCurrentFrame()
+        }
+    }
+
+    // Push a full frame of the current screen immediately, instead of waiting for the next on-screen
+    // change to trigger onImageAvailable. This is what makes the first image appear right away on a
+    // (re)connect / refresh while the app is in the background on a static screen.
+    private fun pushCurrentFrame() {
+        val imageReader = mImageReader ?: return
+        if (meshAgent?.tunnels?.getOrNull(0) == null) return
+
+        val image = try { imageReader.acquireLatestImage() } catch (e: Exception) { null }
+        if (image != null) {
+            try { processImage(image) } finally { image.close() }
+            return
+        }
+
+        val cached = lastFrameBitmap
+        if (cached != null && !cached.isRecycled) {
+            encoder.requestFullFrame()
+            forceFullFrame = false
+            encoder.encode(cached) { AgentController.sendDesktopTunnelData(it) }
+            return
+        }
+
+        recreateVirtualDisplay()
+    }
+
+    private fun recreateVirtualDisplay() {
+        try {
+            mVirtualDisplay?.release()
+            mVirtualDisplay = null
+            mImageReader?.setOnImageAvailableListener(null, null)
+            mImageReader = null
+            if (mMediaProjection != null) createVirtualDisplay()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }
