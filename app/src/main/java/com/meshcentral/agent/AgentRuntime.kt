@@ -80,12 +80,16 @@ interface RemoteDesktopProvider {
 }
 
 object AgentController : AgentHost {
+    private const val INITIAL_RETRY_DELAY_MS = 10_000L
+    private const val MAX_RETRY_DELAY_MS = 300_000L
     private lateinit var appContext: Context
     private val mainHandler = Handler(Looper.getMainLooper())
     private var initialized = false
     private var activity: MainActivity? = null
     private var service: AgentForegroundService? = null
     private var retryRunnable: Runnable? = null
+    private var retryDelayMs = INITIAL_RETRY_DELAY_MS
+    private var retryAttemptInProgress = false
     private var batteryReceiver: BroadcastReceiver? = null
     private var projectionRetryRunnable: Runnable? = null
     private var projectionRetryCount = 0
@@ -144,7 +148,13 @@ object AgentController : AgentHost {
     fun shouldAutoStart(): Boolean {
         loadServerLink()
         loadSettings()
-        return serverLink != null && (enterpriseEnforced || g_autoConnect)
+        return serverLink != null && (enterpriseEnforced || (g_autoConnect && !g_userDisconnect))
+    }
+
+    fun shouldKeepForegroundServiceRunning(): Boolean {
+        loadServerLink()
+        loadSettings()
+        return meshAgent != null || shouldAutoStart() || hasActiveDesktopTunnel()
     }
 
     fun setMeshServerLink(x: String?) {
@@ -170,7 +180,7 @@ object AgentController : AgentHost {
             service?.stopSelf()
         }
 
-        g_userDisconnect = false
+        setUserDisconnected(false)
         refreshInfo()
         if (g_autoConnect || enterpriseEnforced) {
             toggleAgentConnection(false)
@@ -180,9 +190,11 @@ object AgentController : AgentHost {
     fun settingsChanged() {
         loadSettings()
         if (!enterpriseEnforced && !g_autoConnect) {
+            setUserDisconnected(false)
             stopRetryTimer()
             refreshInfo()
             service?.updateNotification()
+            stopServiceIfIdle()
             return
         }
         if ((meshAgent == null) && !g_userDisconnect && hasServerLink()) {
@@ -191,6 +203,7 @@ object AgentController : AgentHost {
         }
         refreshInfo()
         service?.updateNotification()
+        stopServiceIfIdle()
     }
 
     fun toggleAgentConnection(userInitiated: Boolean) {
@@ -199,25 +212,28 @@ object AgentController : AgentHost {
         if ((meshAgent == null) && (serverLink != null)) {
             ensureIdentity()
             if (!userInitiated) {
-                g_userDisconnect = false
+                setUserDisconnected(false)
+                if (!retryAttemptInProgress) resetRetryBackoff()
                 startAgent()
             } else {
                 if (g_autoConnect || enterpriseEnforced) {
                     if (g_userDisconnect) {
-                        g_userDisconnect = false
+                        setUserDisconnected(false)
+                        resetRetryBackoff()
                         startAgent()
                     } else {
-                        g_userDisconnect = true
+                        setUserDisconnected(true)
                         stopRetryTimer()
                     }
                 } else {
-                    g_userDisconnect = true
+                    setUserDisconnected(true)
+                    resetRetryBackoff()
                     startAgent()
                 }
             }
         } else if (meshAgent != null) {
             if (userInitiated && !enterpriseEnforced) {
-                g_userDisconnect = true
+                setUserDisconnected(true)
             }
             stopProjection()
             meshAgent?.Stop()
@@ -226,6 +242,7 @@ object AgentController : AgentHost {
         }
         refreshInfo()
         service?.updateNotification()
+        stopServiceIfIdle()
     }
 
     private fun startAgent() {
@@ -241,6 +258,9 @@ object AgentController : AgentHost {
             if ((meshAgent != null) && (meshAgent?.state == 0)) {
                 meshAgent = null
             }
+            if (meshAgent?.state == 3) {
+                resetRetryBackoff()
+            }
             if (((meshAgent != null) && (meshAgent?.state != 0)) || g_userDisconnect || (!g_autoConnect && !enterpriseEnforced)) {
                 stopRetryTimer()
             } else if ((meshAgent == null) && !g_userDisconnect && (g_autoConnect || enterpriseEnforced) && retryRunnable == null) {
@@ -248,6 +268,7 @@ object AgentController : AgentHost {
             }
             refreshInfo()
             service?.updateNotification()
+            stopServiceIfIdle()
         }
     }
 
@@ -597,15 +618,18 @@ object AgentController : AgentHost {
         g_autoConnect = enterpriseEnforced || pm.getBoolean("pref_autoconnect", false)
         g_autoConsent = enterpriseEnforced || pm.getBoolean("pref_autoconsent", false)
         g_sessionNotification = pm.getBoolean("pref_session_notification", false)
+        g_userDisconnect = !enterpriseEnforced && pm.getBoolean("pref_user_disconnect", false)
         if (enterpriseEnforced) {
             pm.edit()
                 .putBoolean("pref_autoconnect", true)
                 .putBoolean("pref_autoconsent", true)
+                .putBoolean("pref_user_disconnect", false)
                 .apply()
         }
     }
 
     private fun loadFirebaseToken() {
+        if (pushMessagingToken != null) return
         try {
             FirebaseMessaging.getInstance().token.addOnSuccessListener { tokenString ->
                 pushMessagingToken = tokenString
@@ -637,18 +661,45 @@ object AgentController : AgentHost {
         if (retryRunnable != null) return
         retryRunnable = object : Runnable {
             override fun run() {
+                retryRunnable = null
                 if ((meshAgent == null) && !g_userDisconnect && (g_autoConnect || enterpriseEnforced)) {
-                    toggleAgentConnection(false)
+                    retryAttemptInProgress = true
+                    try {
+                        toggleAgentConnection(false)
+                    } finally {
+                        retryAttemptInProgress = false
+                    }
                 }
-                mainHandler.postDelayed(this, 10000)
+                retryDelayMs = (retryDelayMs * 2).coerceAtMost(MAX_RETRY_DELAY_MS)
+                if ((meshAgent == null) && !g_userDisconnect && (g_autoConnect || enterpriseEnforced)) {
+                    startRetryTimer()
+                }
             }
         }
-        mainHandler.postDelayed(retryRunnable!!, 10000)
+        mainHandler.postDelayed(retryRunnable!!, retryDelayMs)
     }
 
     private fun stopRetryTimer() {
         retryRunnable?.let { mainHandler.removeCallbacks(it) }
         retryRunnable = null
+    }
+
+    private fun resetRetryBackoff() {
+        retryDelayMs = INITIAL_RETRY_DELAY_MS
+    }
+
+    private fun setUserDisconnected(disconnected: Boolean) {
+        g_userDisconnect = disconnected && !enterpriseEnforced
+        PreferenceManager.getDefaultSharedPreferences(appContext)
+            .edit()
+            .putBoolean("pref_user_disconnect", g_userDisconnect)
+            .apply()
+    }
+
+    private fun stopServiceIfIdle() {
+        if (!shouldKeepForegroundServiceRunning()) {
+            service?.stopSelf()
+        }
     }
 
     private fun ensureIdentity() {

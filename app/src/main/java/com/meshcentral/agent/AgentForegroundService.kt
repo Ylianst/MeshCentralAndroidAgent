@@ -44,7 +44,11 @@ class AgentForegroundService : Service() {
             }
         }
         updateNotification()
-        return START_STICKY
+        val keepRunning = AgentController.shouldKeepForegroundServiceRunning()
+        if (!keepRunning) {
+            stopSelf()
+        }
+        return if (keepRunning) START_STICKY else START_NOT_STICKY
     }
 
     override fun onDestroy() {

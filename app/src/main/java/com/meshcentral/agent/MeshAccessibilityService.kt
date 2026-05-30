@@ -14,6 +14,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import okio.ByteString
 import kotlin.math.absoluteValue
 import kotlin.math.max
+import kotlin.math.min
 
 class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -26,6 +27,7 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     private var pointerDownX: Int? = null
     private var pointerDownY: Int? = null
     private var unsupportedKeyboardNotified = false
+    private var nextFrameDelayMs = MIN_FRAME_DELAY_MS
 
     override val isRunning: Boolean
         get() = active
@@ -53,6 +55,8 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (!active) return
+        nextFrameDelayMs = MIN_FRAME_DELAY_MS
     }
 
     override fun onInterrupt() {
@@ -67,6 +71,7 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
         active = true
         g_remoteDesktopProvider = this
         unsupportedKeyboardNotified = false
+        nextFrameDelayMs = MIN_FRAME_DELAY_MS
         encoder.requestFullFrame()
         updateTunnelDisplaySize()
         captureFrame()
@@ -87,6 +92,7 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     }
 
     override fun requestFullFrame() {
+        nextFrameDelayMs = MIN_FRAME_DELAY_MS
         encoder.requestFullFrame()
     }
 
@@ -198,7 +204,12 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
                         } else {
                             bitmap
                         }
-                        encoder.encode(encodedBitmap) { AgentController.sendDesktopTunnelData(it) }
+                        val sentFrame = encoder.encode(encodedBitmap) { AgentController.sendDesktopTunnelData(it) }
+                        nextFrameDelayMs = if (sentFrame) {
+                            MIN_FRAME_DELAY_MS
+                        } else {
+                            min(nextFrameDelayMs * 2, MAX_IDLE_FRAME_DELAY_MS)
+                        }
                         if (encodedBitmap !== bitmap) encodedBitmap.recycle()
                         bitmap.recycle()
                     }
@@ -221,7 +232,8 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
 
     private fun scheduleNextCapture() {
         if (!active) return
-        mainHandler.postDelayed(captureRunnable, max(100L, g_desktop_frameRateLimiter.toLong()))
+        val requestedDelay = max(MIN_FRAME_DELAY_MS, g_desktop_frameRateLimiter.toLong())
+        mainHandler.postDelayed(captureRunnable, max(requestedDelay, nextFrameDelayMs))
     }
 
     private fun handleLegacyKey(msg: ByteString): Boolean {
@@ -328,5 +340,7 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     companion object {
         var instance: MeshAccessibilityService? = null
             private set
+        private const val MIN_FRAME_DELAY_MS = 100L
+        private const val MAX_IDLE_FRAME_DELAY_MS = 10_000L
     }
 }

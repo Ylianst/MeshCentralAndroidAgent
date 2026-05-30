@@ -20,7 +20,7 @@ class DesktopFrameEncoder {
         forceFullFrame = true
     }
 
-    fun encode(bitmap: Bitmap, sink: (ByteString) -> Unit) {
+    fun encode(bitmap: Bitmap, sink: (ByteString) -> Unit): Boolean {
         if (frameWidth != bitmap.width || frameHeight != bitmap.height || oldcrcs == null || newcrcs == null) {
             frameWidth = bitmap.width
             frameHeight = bitmap.height
@@ -37,13 +37,13 @@ class DesktopFrameEncoder {
         for (i in 0 until tilesCount) {
             if (forceFullFrame || oldcrcs!![i] != newcrcs!![i]) changedTiles++
         }
-        if (changedTiles == 0) return
+        if (changedTiles == 0) return false
 
         if (forceFullFrame || ((changedTiles * 100) >= (tilesCount * 85))) {
             sink(buildImageCommand(bitmap, 0, 0, bitmap.width, bitmap.height))
             for (i in 0 until tilesCount) oldcrcs!![i] = newcrcs!![i]
             forceFullFrame = false
-            return
+            return true
         }
 
         var sendx = -1
@@ -75,6 +75,7 @@ class DesktopFrameEncoder {
             sendSubBitmapRow(bitmap, sendx, sendy, sendw, sink)
         }
         forceFullFrame = false
+        return true
     }
 
     private fun sendSubBitmapRow(bitmap: Bitmap, x: Int, y: Int, w: Int, sink: (ByteString) -> Unit) {
