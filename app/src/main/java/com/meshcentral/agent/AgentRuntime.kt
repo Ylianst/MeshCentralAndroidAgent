@@ -290,6 +290,7 @@ object AgentController : AgentHost {
 
     override fun startProjection() {
         if (meshAgent == null || meshAgent?.state != 3) return
+        if (!hasActiveDesktopTunnel()) return
         if (isRemoteDesktopRunning()) return
         val accessibility = MeshAccessibilityService.instance
         if (accessibility != null) {

@@ -308,10 +308,6 @@ class MeshAgent(parent: AgentHost, host: String, certHash: String, devGroupId: S
         sendNetworkUpdate(false)
         sendServerImageRequest()
 
-        if (g_autoConsent) {
-            parent.startProjection()
-        }
-
         // Send battery state
         if (_webSocket != null) { _webSocket?.send(getSysBatteryInfo().toString().toByteArray().toByteString()) }
     }
