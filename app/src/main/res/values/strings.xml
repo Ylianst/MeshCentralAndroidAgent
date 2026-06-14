@@ -93,6 +93,11 @@
     <string name="session_active_title">Remote session active</string>
     <string name="session_connected_one">Connected %1$s</string>
     <string name="session_connected_many">%1$d users connected</string>
+    <string name="unattended_consent_message">A remote user wants to view and control this screen for this session. Allow screen sharing?</string>
+    <string name="approve_screen_sharing_title">Approve screen sharing</string>
+    <string name="approve_screen_sharing_body">A remote user is requesting to view and control this screen.</string>
+    <string name="approve">Approve</string>
+    <string name="deny">Deny</string>
     <string name="setup_message">Setup to: %1$s?</string>
     <string name="clear_server_setup">Clear server setup?</string>
     <string name="server_pairing_link">Server Pairing Link</string>

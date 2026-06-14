@@ -14,7 +14,8 @@ class DesktopFrameEncoder {
     private var tilesCount: Int = 0
     private var oldcrcs: IntArray? = null
     private var newcrcs: IntArray? = null
-    private var forceFullFrame = true
+    // Written from the tunnel/main thread, read on the capture thread.
+    @Volatile private var forceFullFrame = true
 
     fun requestFullFrame() {
         forceFullFrame = true

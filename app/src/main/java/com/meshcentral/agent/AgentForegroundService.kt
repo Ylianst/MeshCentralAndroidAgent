@@ -31,6 +31,14 @@ class AgentForegroundService : Service() {
             ACTION_CONNECT -> if (meshAgent == null) AgentController.toggleAgentConnection(false)
             ACTION_DISCONNECT -> if (!AgentController.enterpriseEnforced && meshAgent != null) AgentController.toggleAgentConnection(true)
             ACTION_STOP_SCREEN_SHARING -> AgentController.stopScreenSharingByUser()
+            ACTION_APPROVE_SCREEN_SHARING -> {
+                cancelConsentNotification(this)
+                AgentController.confirmUnattendedConsent()
+            }
+            ACTION_DENY_SCREEN_SHARING -> {
+                cancelConsentNotification(this)
+                AgentController.denyUnattendedConsent()
+            }
             ACTION_STOP -> {
                 if (!AgentController.enterpriseEnforced) {
                     if (meshAgent != null) AgentController.toggleAgentConnection(true)
@@ -126,12 +134,17 @@ class AgentForegroundService : Service() {
         private const val CHANNEL_NAME = "MeshCentral Agent"
         private const val SESSION_CHANNEL_ID = "meshcentral_agent_session"
         private const val SESSION_CHANNEL_NAME = "Remote session active"
+        private const val CONSENT_CHANNEL_ID = "meshcentral_agent_consent"
+        private const val CONSENT_CHANNEL_NAME = "Screen sharing approval"
         private const val NOTIFICATION_ID = 2401
         private const val RUNTIME_NOTIFICATION_ID = 2402
         private const val SESSION_NOTIFICATION_ID = 2403
+        private const val CONSENT_NOTIFICATION_ID = 2404
         private const val ACTION_CONNECT = "com.meshcentral.agent.action.CONNECT"
         private const val ACTION_DISCONNECT = "com.meshcentral.agent.action.DISCONNECT"
         private const val ACTION_STOP_SCREEN_SHARING = "com.meshcentral.agent.action.STOP_SCREEN_SHARING"
+        private const val ACTION_APPROVE_SCREEN_SHARING = "com.meshcentral.agent.action.APPROVE_SCREEN_SHARING"
+        private const val ACTION_DENY_SCREEN_SHARING = "com.meshcentral.agent.action.DENY_SCREEN_SHARING"
         private const val ACTION_STOP = "com.meshcentral.agent.action.STOP"
 
         fun start(context: Context) {
@@ -164,6 +177,36 @@ class AgentForegroundService : Service() {
                 .build()
             try {
                 NotificationManagerCompat.from(context).notify(RUNTIME_NOTIFICATION_ID, notification)
+            } catch (_: SecurityException) {
+            }
+        }
+
+        // Consent request with Approve/Deny actions, for when the app isn't foregrounded.
+        fun showConsentNotification(context: Context) {
+            createConsentNotificationChannel(context)
+            val body = context.getString(R.string.approve_screen_sharing_body)
+            val notification = NotificationCompat.Builder(context, CONSENT_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_cloud)
+                .setContentTitle(context.getString(R.string.approve_screen_sharing_title))
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setContentIntent(openAppPendingIntent(context, null))
+                .setCategory(Notification.CATEGORY_CALL)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setOngoing(true)
+                .setAutoCancel(false)
+                .addAction(R.drawable.ic_cloud, context.getString(R.string.approve), servicePendingIntent(context, ACTION_APPROVE_SCREEN_SHARING, 4))
+                .addAction(R.drawable.ic_cloud, context.getString(R.string.deny), servicePendingIntent(context, ACTION_DENY_SCREEN_SHARING, 5))
+                .build()
+            try {
+                NotificationManagerCompat.from(context).notify(CONSENT_NOTIFICATION_ID, notification)
+            } catch (_: SecurityException) {
+            }
+        }
+
+        fun cancelConsentNotification(context: Context) {
+            try {
+                NotificationManagerCompat.from(context).cancel(CONSENT_NOTIFICATION_ID)
             } catch (_: SecurityException) {
             }
         }
@@ -237,6 +280,15 @@ class AgentForegroundService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val channel = NotificationChannel(SESSION_CHANNEL_ID, SESSION_CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT)
                 channel.lightColor = Color.BLUE
+                channel.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.createNotificationChannel(channel)
+            }
+        }
+
+        private fun createConsentNotificationChannel(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(CONSENT_CHANNEL_ID, CONSENT_CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH)
                 channel.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
                 val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 manager.createNotificationChannel(channel)

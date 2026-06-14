@@ -122,7 +122,6 @@ class MainActivity : AppCompatActivity() {
         settingsChanged()
         if (serverLink != null) {
             requestAllPermissions()
-            AgentController.requestBatteryOptimizationExemption()
         }
     }
 
@@ -130,6 +129,10 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (serverLink != null) {
             window.decorView.post { showUnattendedSetupPromptIfNeeded(false) }
+            // Retry a session that connected while backgrounded and is waiting to prompt for consent.
+            if (AgentController.hasActiveDesktopTunnel() && !AgentController.isRemoteDesktopRunning()) {
+                AgentController.startProjection()
+            }
         }
         invalidateOptionsMenu()
     }
@@ -596,6 +599,27 @@ class MainActivity : AppCompatActivity() {
             }
             .setNeutralButton(R.string.share_screen_once) { _, _ ->
                 startMediaProjectionPrompt()
+            }
+            .setNegativeButton(android.R.string.cancel) { dialog, _ ->
+                sendDesktopConsentDenied()
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    // Per-connection consent prompt shown when Automatic Consent is off.
+    fun promptUnattendedConsent() {
+        if (AgentController.isRemoteDesktopRunning() || (meshAgent == null) || (meshAgent!!.state != 3)) return
+        if (isFinishing || isDestroyed) return
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
+        alert = AlertDialog.Builder(this)
+            .setTitle(R.string.share_screen_choice_title)
+            .setMessage(R.string.unattended_consent_message)
+            .setPositiveButton(R.string.share_screen_once) { _, _ ->
+                AgentController.confirmUnattendedConsent()
             }
             .setNegativeButton(android.R.string.cancel) { dialog, _ ->
                 sendDesktopConsentDenied()

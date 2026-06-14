@@ -22,10 +22,12 @@ import android.view.Gravity
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.preference.PreferenceManager
 import com.google.firebase.messaging.FirebaseMessaging
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.json.JSONObject
 import org.spongycastle.asn1.x500.X500Name
 import org.spongycastle.cert.X509v3CertificateBuilder
 import org.spongycastle.cert.jcajce.JcaX509CertificateConverter
@@ -91,6 +93,8 @@ object AgentController : AgentHost {
     private var retryDelayMs = INITIAL_RETRY_DELAY_MS
     private var retryAttemptInProgress = false
     private var batteryReceiver: BroadcastReceiver? = null
+    private var settingsListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private var handlingSettingsChange = false
     private var projectionRetryRunnable: Runnable? = null
     private var projectionRetryCount = 0
     private val MAX_PROJECTION_RETRIES = 12
@@ -112,6 +116,7 @@ object AgentController : AgentHost {
         if (!initialized) {
             initialized = true
             registerBatteryReceiver()
+            registerSettingsListener()
         }
     }
 
@@ -174,7 +179,6 @@ object AgentController : AgentHost {
                 .apply()
             g_autoConnect = true
             AgentForegroundService.start(appContext)
-            requestBatteryOptimizationExemption()
         } else {
             stopProjection()
             service?.stopSelf()
@@ -288,14 +292,34 @@ object AgentController : AgentHost {
         }
     }
 
+    // May run on the tunnel's OkHttp thread; dialogs and activities must start on the main thread, or a
+    // dialog built off it throws "Can't create handler ... Looper.prepare()".
     override fun startProjection() {
+        runOnHostThread { startProjectionOnHostThread() }
+    }
+
+    private fun startProjectionOnHostThread() {
         if (meshAgent == null || meshAgent?.state != 3) return
         if (!hasActiveDesktopTunnel()) return
         if (isRemoteDesktopRunning()) return
         val accessibility = MeshAccessibilityService.instance
         if (accessibility != null) {
             cancelProjectionRetry()
-            if (accessibility.startDesktop()) return
+            if (g_autoConsent) {
+                if (accessibility.startDesktop()) return
+            } else {
+                // Automatic Consent off: require explicit approval before capturing.
+                val mainActivity = activity
+                val resumed = mainActivity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true
+                if (mainActivity != null && resumed) {
+                    mainActivity.promptUnattendedConsent()
+                } else {
+                    // No foreground activity to host a dialog, so ask via the notification.
+                    sendDesktopMessage("Waiting for the device user to approve screen sharing.")
+                    AgentForegroundService.showConsentNotification(appContext)
+                }
+                return
+            }
         } else if (isAccessibilityServiceEnabled() && waitForAccessibilityProjection()) {
             // Unattended access is granted but the accessibility service has not rebound yet (common
             // right after an app update). Wait for it to connect instead of reporting setup as missing.
@@ -326,7 +350,24 @@ object AgentController : AgentHost {
         )
     }
 
+    fun confirmUnattendedConsent() {
+        if (::appContext.isInitialized) AgentForegroundService.cancelConsentNotification(appContext)
+        if (meshAgent?.state != 3 || !hasActiveDesktopTunnel() || isRemoteDesktopRunning()) return
+        runOnHostThread { MeshAccessibilityService.instance?.startDesktop() }
+    }
+
+    fun denyUnattendedConsent() {
+        val tunnel = meshAgent?.tunnels?.getOrNull(0) ?: return
+        val json = JSONObject()
+        json.put("type", "console")
+        json.put("msg", "denied")
+        json.put("msgid", 2)
+        tunnel.sendCtrlResponse(json)
+        tunnel.Stop()
+    }
+
     override fun stopProjection() {
+        if (::appContext.isInitialized) AgentForegroundService.cancelConsentNotification(appContext)
         val provider = g_remoteDesktopProvider
         if (provider is MeshAccessibilityService) {
             provider.stopDesktop()
@@ -562,27 +603,6 @@ object AgentController : AgentHost {
         }
     }
 
-    fun requestBatteryOptimizationExemption() {
-        if (!::appContext.isInitialized) return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
-        if (powerManager.isIgnoringBatteryOptimizations(appContext.packageName)) return
-        val mainActivity = activity ?: return
-        if (ContextCompat.checkSelfPermission(appContext, Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return
-        }
-        try {
-            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-            intent.data = Uri.parse("package:${appContext.packageName}")
-            mainActivity.startActivity(intent)
-        } catch (ex: Exception) {
-            try {
-                mainActivity.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
-            } catch (_: Exception) {
-            }
-        }
-    }
-
     fun isIgnoringBatteryOptimizations(): Boolean {
         if (!::appContext.isInitialized) return false
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
@@ -620,13 +640,39 @@ object AgentController : AgentHost {
         g_autoConsent = enterpriseEnforced || pm.getBoolean("pref_autoconsent", false)
         g_sessionNotification = pm.getBoolean("pref_session_notification", false)
         g_userDisconnect = !enterpriseEnforced && pm.getBoolean("pref_user_disconnect", false)
-        if (enterpriseEnforced) {
+        // Only write if a value differs, or the change listener loops on enterprise builds.
+        if (enterpriseEnforced &&
+            (!pm.getBoolean("pref_autoconnect", false) ||
+                !pm.getBoolean("pref_autoconsent", false) ||
+                pm.getBoolean("pref_user_disconnect", false))) {
             pm.edit()
                 .putBoolean("pref_autoconnect", true)
                 .putBoolean("pref_autoconsent", true)
                 .putBoolean("pref_user_disconnect", false)
                 .apply()
         }
+    }
+
+    // Apply setting toggles immediately, not only when the Settings screen closes. pref_user_disconnect
+    // is internal state written in code, so it's deliberately not watched.
+    private fun registerSettingsListener() {
+        if (settingsListener != null) return
+        val pm = PreferenceManager.getDefaultSharedPreferences(appContext)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (handlingSettingsChange) return@OnSharedPreferenceChangeListener
+            when (key) {
+                "pref_autoconnect", "pref_autoconsent", "pref_session_notification" -> {
+                    handlingSettingsChange = true
+                    try {
+                        settingsChanged()
+                    } finally {
+                        handlingSettingsChange = false
+                    }
+                }
+            }
+        }
+        settingsListener = listener
+        pm.registerOnSharedPreferenceChangeListener(listener)
     }
 
     private fun loadFirebaseToken() {

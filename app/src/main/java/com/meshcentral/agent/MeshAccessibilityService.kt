@@ -12,6 +12,8 @@ import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import okio.ByteString
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlin.math.absoluteValue
 import kotlin.math.max
 import kotlin.math.min
@@ -20,14 +22,17 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val encoder = DesktopFrameEncoder()
     private val captureRunnable = Runnable { captureFrame() }
-    private var active = false
-    private var capturing = false
-    private var lastWidth = 0
-    private var lastHeight = 0
+    // Encode off the main thread so it can't block accessibility input dispatch.
+    private val captureExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    @Volatile private var active = false
+    @Volatile private var capturing = false
+    @Volatile private var lastWidth = 0
+    @Volatile private var lastHeight = 0
     private var pointerDownX: Int? = null
     private var pointerDownY: Int? = null
     private var unsupportedKeyboardNotified = false
-    private var nextFrameDelayMs = MIN_FRAME_DELAY_MS
+    @Volatile private var nextFrameDelayMs = MIN_FRAME_DELAY_MS
+    @Volatile private var screenshotErrorNotified = false
 
     override val isRunning: Boolean
         get() = active
@@ -51,6 +56,7 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     override fun onDestroy() {
         if (instance === this) instance = null
         stopDesktop()
+        captureExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -184,8 +190,10 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     private fun captureFrame() {
         if (!active || capturing || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         capturing = true
-        takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : AccessibilityService.TakeScreenshotCallback {
+        takeScreenshot(Display.DEFAULT_DISPLAY, captureExecutor, object : AccessibilityService.TakeScreenshotCallback {
             override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+                // Recovered: allow the next error to be reported again.
+                screenshotErrorNotified = false
                 try {
                     val wrapped = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
                     if (wrapped != null) {
@@ -214,7 +222,10 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
                         bitmap.recycle()
                     }
                 } catch (ex: Exception) {
-                    AgentController.sendDesktopMessage("Unable to capture unattended screenshot: ${ex.message}")
+                    if (!screenshotErrorNotified) {
+                        screenshotErrorNotified = true
+                        AgentController.sendDesktopMessage("Unable to capture unattended screenshot: ${ex.message}")
+                    }
                 } finally {
                     screenshot.hardwareBuffer.close()
                     capturing = false
@@ -224,7 +235,12 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
 
             override fun onFailure(errorCode: Int) {
                 capturing = false
-                AgentController.sendDesktopMessage("Unable to capture unattended screenshot, error $errorCode.")
+                // Throttled or transient error; back off quietly instead of flooding the console.
+                nextFrameDelayMs = min(nextFrameDelayMs * 2, MAX_IDLE_FRAME_DELAY_MS)
+                if (errorCode != AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT && !screenshotErrorNotified) {
+                    screenshotErrorNotified = true
+                    AgentController.sendDesktopMessage("Unable to capture unattended screenshot, error $errorCode.")
+                }
                 scheduleNextCapture()
             }
         })
@@ -233,7 +249,9 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     private fun scheduleNextCapture() {
         if (!active) return
         val requestedDelay = max(MIN_FRAME_DELAY_MS, g_desktop_frameRateLimiter.toLong())
-        mainHandler.postDelayed(captureRunnable, max(requestedDelay, nextFrameDelayMs))
+        // Don't request faster than the system screenshot throttle, whatever the server asks for.
+        val delay = maxOf(requestedDelay, nextFrameDelayMs, MIN_SCREENSHOT_INTERVAL_MS)
+        mainHandler.postDelayed(captureRunnable, delay)
     }
 
     private fun handleLegacyKey(msg: ByteString): Boolean {
@@ -342,5 +360,7 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
             private set
         private const val MIN_FRAME_DELAY_MS = 100L
         private const val MAX_IDLE_FRAME_DELAY_MS = 10_000L
+        // System throttles takeScreenshot() faster than ~3 fps.
+        private const val MIN_SCREENSHOT_INTERVAL_MS = 350L
     }
 }
