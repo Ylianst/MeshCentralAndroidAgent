@@ -31,6 +31,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
+        AgentController.init(applicationContext)
         println("onMessageReceived-from: ${remoteMessage.from}")
         println("onMessageReceived-data: ${remoteMessage.data}")
         println("serverLink: $serverLink")
@@ -58,12 +59,14 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
 
         if ((url != null) && (url.startsWith("2fa://"))) {
             // Move to user authentication
+            g_auth_url = Uri.parse(url)
+            AgentForegroundService.start(this)
+            if (meshAgent == null) {
+                AgentController.toggleAgentConnection(false)
+            }
             if (g_mainActivity != null) {
                 g_mainActivity?.runOnUiThread {
-                    g_auth_url = Uri.parse(url)
-                    if (meshAgent == null) {
-                        g_mainActivity?.toggleAgentConnection(false);
-                    } else {
+                    if (meshAgent != null) {
                         // Switch to 2FA auth screen
                         if (mainFragment != null) {
                             mainFragment?.moveToAuthPage()
@@ -75,6 +78,8 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
             if (g_mainActivity != null) {
                 println("Showing notification with URL: $url");
                 g_mainActivity?.showNotification(remoteMessage.notification?.title, remoteMessage.notification?.body, url)
+            } else {
+                AgentController.showRuntimeNotification(remoteMessage.notification?.title, remoteMessage.notification?.body, url)
             }
         } else if (remoteMessage.data != null) {
             var cmd : String? = remoteMessage.data["con"]
@@ -138,13 +143,11 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
                 // Vibrate the device
                 if (splitCmd.size < 2) {
                     r = "Usage:\r\n  vibrate [milliseconds]";
-                } else if (g_mainActivity == null) {
-                    r = "No main activity";
                 } else if (splitCmd.size >= 2) {
                     var t : Long = 0
                     try { t = splitCmd[1].toLong() } catch (e : Exception) {}
                     if ((t > 0) && (t <= 10000)) {
-                        val v = g_mainActivity!!.getApplicationContext()
+                        val v = applicationContext
                                 .getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
                         if (v == null) {
                             r = "Not supported"
@@ -170,10 +173,8 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
             "flash" -> {
                 if (splitCmd.size < 2) {
                     r = "Usage:\r\n  flash [milliseconds]";
-                } else if (g_mainActivity == null) {
-                    r = "No main activity";
                 } else if (splitCmd.size >= 2) {
-                    var isFlashAvailable = g_mainActivity!!.getApplicationContext().getPackageManager()
+                    var isFlashAvailable = applicationContext.getPackageManager()
                             .hasSystemFeature(PackageManager.FEATURE_CAMERA_FRONT);
                     if (!isFlashAvailable) {
                         r = "Flash not available"
@@ -181,7 +182,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
                         var t : Long = 0
                         try { t = splitCmd[1].toLong() } catch (e : Exception) {}
                         if ((t > 0) && (t <= 10000)) {
-                            var mCameraManager = g_mainActivity!!.getApplicationContext().getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                            var mCameraManager = applicationContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
                             try {
                                 var mCameraId = mCameraManager.getCameraIdList()[0];
                                 mCameraManager.setTorchMode(mCameraId, true);

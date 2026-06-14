@@ -8,21 +8,16 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.CountDownTimer
 import android.provider.Settings
 import android.text.InputType
-import android.util.Base64
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
@@ -31,28 +26,12 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.preference.PreferenceManager
 import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONObject
-import org.spongycastle.asn1.x500.X500Name
-import org.spongycastle.cert.X509v3CertificateBuilder
-import org.spongycastle.cert.jcajce.JcaX509CertificateConverter
-import org.spongycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.spongycastle.jce.provider.BouncyCastleProvider
-import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
-import java.io.ByteArrayInputStream
-import java.math.BigInteger
-import java.security.KeyFactory
-import java.security.KeyPairGenerator
 import java.security.PrivateKey
-import java.security.SecureRandom
 import java.security.Security
-import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
-import java.security.spec.PKCS8EncodedKeySpec
-import java.util.Date
-import java.util.Random
-import kotlin.math.absoluteValue
 
 
 // You can hardcode a server connection string into this application by setting this string.
@@ -81,11 +60,12 @@ var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivi
 var pushMessagingToken : String? = null
 var g_autoConnect : Boolean = true
 var g_autoConsent : Boolean = false
+var g_sessionNotification : Boolean = false
 var g_userDisconnect : Boolean = false // Indicate user initiated disconnection
-var g_retryTimer: CountDownTimer? = null
 
 // Remote desktop values
 var g_ScreenCaptureService : ScreenCaptureService? = null
+var g_remoteDesktopProvider : RemoteDesktopProvider? = null
 var g_desktop_imageType : Int = 1
 var g_desktop_compressionLevel : Int = 40
 var g_desktop_scalingLevel : Int = 1024
@@ -96,6 +76,9 @@ var g_auth_url : Uri? = null
 
 class MainActivity : AppCompatActivity() {
     var alert : AlertDialog? = null
+    // Set when the user taps "Later" on the unattended setup prompt; suppresses it for this session
+    // only, so it returns on the next launch/resume while items are still missing.
+    private var unattendedPromptDismissed = false
     lateinit var notificationChannel: NotificationChannel
     lateinit var notificationManager: NotificationManager
     lateinit var builder: Notification.Builder
@@ -106,17 +89,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        g_mainActivity = this
-        val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
-        if (hardCodedServerLink != null) {
-            // Use the hard coded server link
-            serverLink = hardCodedServerLink
-        } else {
-            // Use the configurable server link
-            serverLink = sharedPreferences?.getString("qrmsh", null)
-        }
-
         super.onCreate(savedInstanceState)
+        AgentController.attachActivity(this)
         setContentView(R.layout.activity_main)
 
         //var toolbar = g_mainActivity?.findViewById<androidx.appcompat.widget.Toolbar>(R.id.toolbar)
@@ -124,13 +98,6 @@ class MainActivity : AppCompatActivity() {
 
         // Setup notification manager
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        // Register to get battery events
-        val intentFilter = IntentFilter()
-        intentFilter.addAction(Intent.ACTION_POWER_CONNECTED)
-        intentFilter.addAction(Intent.ACTION_POWER_DISCONNECTED)
-        intentFilter.addAction(Intent.ACTION_BATTERY_CHANGED)
-        registerReceiver(batteryInfoReceiver, intentFilter)
 
         // Check if this device has a camera
         cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)
@@ -149,48 +116,50 @@ class MainActivity : AppCompatActivity() {
         }
         */
 
-        // See if we there open by a notification with a URL
-        var intentUrl : String? = intent.getStringExtra("url")
-        //println("Main Activity Create URL: $intentUrl")
-        if (intentUrl != null) {
-            intent.removeExtra("url")
-            if (intentUrl.lowercase().startsWith("2fa://")) {
-                // if there is no server link, ignore this
-                if (serverLink != null) {
-                    // This activity was created by a 2FA message
-                    g_auth_url = Uri.parse(intentUrl)
-                    // If not connected, connect to the server now.
-                    if (meshAgent == null) {
-                        toggleAgentConnection(false);
-                    } else {
-                        // Switch to 2FA auth screen
-                        if (mainFragment != null) {
-                            mainFragment?.moveToAuthPage()
-                        }
-                    }
-
-                }
-            } else if (intentUrl.lowercase().startsWith("http://") || intentUrl.lowercase().startsWith("https://")) {
-                // Open an HTTP or HTTPS URL.
-                var getintent: Intent = Intent(Intent.ACTION_VIEW, Uri.parse(intentUrl));
-                startActivity(getintent);
-            }
-        }
+        handleIntentUrl(intent)
 
         // Activate the settings
         settingsChanged()
-        if (g_autoConnect && !g_userDisconnect && (meshAgent == null)) {
-            toggleAgentConnection(false)
+        if (serverLink != null) {
+            requestAllPermissions()
         }
     }
 
-    private fun sendConsoleMessage(msg: String) {
-        if (meshAgent != null) { meshAgent?.sendConsoleResponse(msg, null) }
+    override fun onResume() {
+        super.onResume()
+        if (serverLink != null) {
+            window.decorView.post { showUnattendedSetupPromptIfNeeded(false) }
+            // Retry a session that connected while backgrounded and is waiting to prompt for consent.
+            if (AgentController.hasActiveDesktopTunnel() && !AgentController.isRemoteDesktopRunning()) {
+                AgentController.startProjection()
+            }
+        }
+        invalidateOptionsMenu()
     }
 
-    private val batteryInfoReceiver: BroadcastReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (meshAgent != null) { meshAgent?.batteryStateChanged(intent) }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntentUrl(intent)
+    }
+
+    private fun handleIntentUrl(intent: Intent?) {
+        val intentUrl: String = intent?.getStringExtra("url") ?: return
+        intent.removeExtra("url")
+        if (intentUrl.lowercase().startsWith("2fa://")) {
+            if (serverLink != null) {
+                g_auth_url = Uri.parse(intentUrl)
+                if (meshAgent == null) {
+                    toggleAgentConnection(false)
+                } else {
+                    if (mainFragment != null) {
+                        mainFragment?.moveToAuthPage()
+                    }
+                }
+            }
+        } else if (intentUrl.lowercase().startsWith("http://") || intentUrl.lowercase().startsWith("https://")) {
+            val getintent = Intent(Intent.ACTION_VIEW, Uri.parse(intentUrl))
+            startActivity(getintent)
         }
     }
 
@@ -209,15 +178,17 @@ class MainActivity : AppCompatActivity() {
         var item3 = menu.findItem(R.id.action_close);
         item3.isVisible = (visibleScreen != 1);
         var item4 = menu.findItem(R.id.action_sharescreen);
-        item4.isVisible = false // (g_ScreenCaptureService == null) && (meshAgent != null) && (meshAgent!!.state == 3)
+        item4.isVisible = false
         var item5 = menu.findItem(R.id.action_stopscreensharing);
-        item5.isVisible = (g_ScreenCaptureService != null)
+        item5.isVisible = AgentController.isRemoteDesktopRunning()
         var item6 = menu.findItem(R.id.action_manual_setup_server);
         item6.isVisible = (visibleScreen == 1) && (serverLink == null) && (hardCodedServerLink == null)
         var item7 = menu.findItem(R.id.action_testAuth);
         item7.isVisible = false //(visibleScreen == 1) && (serverLink != null);
         var item8 = menu.findItem(R.id.action_settings);
         item8.isVisible = (visibleScreen == 1);
+        var itemCheckSetup = menu.findItem(R.id.action_check_setup);
+        itemCheckSetup.isVisible = (visibleScreen == 1) && (serverLink != null);
         var item9 = menu.findItem(R.id.action_enablepushauthentication);
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             item9.isVisible = (notificationManager.areNotificationsEnabled() == false)
@@ -253,8 +224,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (item.itemId == R.id.action_stopscreensharing) {
-            // Stop projection
-            stopProjection()
+            AgentController.stopScreenSharingByUser()
+        }
+
+        if (item.itemId == R.id.action_check_setup) {
+            showUnattendedSetupPromptIfNeeded(true)
         }
 
         if ((item.itemId == R.id.action_manual_setup_server) && (hardCodedServerLink == null)) {
@@ -274,8 +248,13 @@ class MainActivity : AppCompatActivity() {
 
         if (item.itemId == R.id.action_enablepushauthentication) {
             // Ask to Enable Push Notifications for Push Authentication
-            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-            intent.putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            } else {
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(Uri.parse("package:$packageName"))
+            }
             startActivity(intent)
         }
 
@@ -286,7 +265,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        g_mainActivity = null
+        AgentController.detachActivity(this)
         if (alert != null) {
             alert?.dismiss()
             alert = null
@@ -300,7 +279,7 @@ class MainActivity : AppCompatActivity() {
 
         if (requestCode == MainActivity.Companion.REQUEST_CODE) {
             if (resultCode == RESULT_OK) {
-                startService(com.meshcentral.agent.ScreenCaptureService.getStartIntent(this, resultCode, data))
+                ContextCompat.startForegroundService(this, com.meshcentral.agent.ScreenCaptureService.getStartIntent(this, resultCode, data))
                 if (meshAgent?.tunnels?.getOrNull(0) != null) {
                     val json = JSONObject()
                     json.put("type", "console")
@@ -310,14 +289,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 return
             } else {
-                if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                    val json = JSONObject()
-                    json.put("type", "console")
-                    json.put("msg", "denied")
-                    json.put("msgid", 2)
-                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                    meshAgent!!.tunnels[0].Stop()
-                }
+                sendDesktopConsentDenied()
                 return
             }
         }
@@ -338,21 +310,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun setMeshServerLink(x: String?) {
-        if ((serverLink == x) || (hardCodedServerLink != null)) return
-        if (meshAgent != null) { // Stop the agent
-            meshAgent?.Stop()
-            meshAgent = null
+        AgentController.setMeshServerLink(x)
+        if (x != null) {
+            requestAllPermissions()
+            window.decorView.post { showUnattendedSetupPromptIfNeeded(true) }
         }
-        serverLink = x
-        val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
-        sharedPreferences.edit().putString("qrmsh", x).apply()
-        mainFragment?.refreshInfo()
-        g_userDisconnect = false
-        if (g_autoConnect) { toggleAgentConnection(false) }
     }
 
     // Open a URL in the web view fragment
-    fun openUrl(xpageUrl: String) : Boolean {
+    fun openUrlInApp(xpageUrl: String) : Boolean {
         if (visibleScreen == 2) return false
         pageUrl = xpageUrl;
         if (visibleScreen == 1) {
@@ -376,23 +342,6 @@ class MainActivity : AppCompatActivity() {
             } else if (visibleScreen == 5) {
                 if (settingsFragment != null) settingsFragment?.exit()
             }
-        }
-    }
-
-    fun agentStateChanged() {
-        this.runOnUiThread {
-            if ((meshAgent != null) && (meshAgent?.state == 0)) {
-                meshAgent = null
-            }
-            if (((meshAgent != null) && (meshAgent?.state == 2)) || (g_userDisconnect) || (!g_autoConnect)) stopRetryTimer()
-            else if ((meshAgent == null) && (!g_userDisconnect) && (g_autoConnect) && (g_retryTimer == null)) startRetryTimer()
-            mainFragment?.refreshInfo()
-        }
-    }
-
-    fun refreshInfo() {
-        this.runOnUiThread {
-            mainFragment?.refreshInfo()
         }
     }
 
@@ -432,25 +381,6 @@ class MainActivity : AppCompatActivity() {
             toast?.setGravity(Gravity.CENTER, 0, 300)
             toast?.show()
         }
-    }
-
-    fun getServerHost() : String? {
-        if (serverLink == null) return null
-        var x : List<String> = serverLink!!.split(',')
-        var serverHost = x[0]
-        return serverHost.substring(5)
-    }
-
-    fun getServerHash() : String? {
-        if (serverLink == null) return null
-        var x : List<String> = serverLink!!.split(',')
-        return x[1]
-    }
-
-    fun getDevGroup() : String? {
-        if (serverLink == null) return null
-        var x : List<String> = serverLink!!.split(',')
-        return x[2]
     }
 
     fun isAgentDisconnected() : Boolean {
@@ -493,96 +423,66 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun showUnattendedSetupPromptIfNeeded(force: Boolean) {
+        if (serverLink == null || isFinishing || isDestroyed) return
+        val missingItems = ArrayList<String>()
+        if (!AgentController.isAccessibilityServiceEnabled()) {
+            missingItems.add(getString(R.string.missing_accessibility))
+        }
+        if (!AgentController.isIgnoringBatteryOptimizations()) {
+            missingItems.add(getString(R.string.missing_battery))
+        }
+        if (!AgentController.areNotificationsEnabled()) {
+            missingItems.add(getString(R.string.missing_notifications))
+        }
+        if (missingItems.isEmpty()) {
+            if (force) showToastMessage(getString(R.string.unattended_setup_complete))
+            return
+        }
+
+        // A manual re-open always shows the prompt and clears any earlier dismissal; an automatic
+        // check stays hidden if the user already dismissed it this session.
+        if (force) {
+            unattendedPromptDismissed = false
+        } else if (unattendedPromptDismissed) {
+            return
+        }
+
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
+        val missingText = missingItems.joinToString(separator = "\n") { "- $it" }
+        val builder = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.unattended_setup_title))
+            .setMessage(getString(R.string.unattended_setup_message, BuildConfig.VERSION_NAME, missingText))
+            .setPositiveButton(R.string.open_accessibility_settings) { _, _ ->
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .setNeutralButton(R.string.open_app_settings) { _, _ ->
+                mainFragment?.moveToSettingsPage()
+            }
+            .setNegativeButton(R.string.later) { dialog, _ ->
+                unattendedPromptDismissed = true
+                dialog.dismiss()
+            }
+        alert = builder.show()
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_ALL_PERMISSIONS) {
-            permissions.forEachIndexed { index, permission ->
+            permissions.forEachIndexed { index, _ ->
                 if (grantResults[index] == PackageManager.PERMISSION_DENIED) {
-                    // Handle each denied permission if necessary
                 }
             }
         }
     }
 
     fun toggleAgentConnection(userInitiated : Boolean) {
-        //println("toggleAgentConnection")
-        if ((meshAgent == null) && (serverLink != null)) {
-            // Create and connect the agent
-            requestAllPermissions();
-            if (agentCertificate == null) {
-                val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
-                var certb64 : String? = sharedPreferences?.getString("agentCert", null)
-                var keyb64 : String? = sharedPreferences?.getString("agentKey", null)
-                if ((certb64 == null) || (keyb64 == null)) {
-                    //println("Generating new certificates...")
-
-                    // Generate an RSA key pair
-                    val keyGen = KeyPairGenerator.getInstance("RSA")
-                    keyGen.initialize(2048, SecureRandom())
-                    val keypair = keyGen.generateKeyPair()
-
-                    // Generate Serial Number
-                    var serial : BigInteger = BigInteger("12345678");
-                    try { serial = BigInteger.valueOf(Random().nextInt().toLong().absoluteValue) } catch (ex: Exception) {}
-
-                    // Create self signed certificate
-                    val builder: X509v3CertificateBuilder = JcaX509v3CertificateBuilder(
-                            X500Name("CN=android.agent.meshcentral.com"), // issuer authority
-                            serial, // serial number of certificate
-                            Date(System.currentTimeMillis() - 86400000L * 365), // start of validity
-                            Date(253402300799000L), // end of certificate validity
-                            X500Name("CN=android.agent.meshcentral.com"), // subject name of certificate
-                            keypair.public) // public key of certificate
-                    agentCertificate = JcaX509CertificateConverter().setProvider("SC").getCertificate(builder
-                            .build(JcaContentSignerBuilder("SHA256withRSA").build(keypair.private))) // Private key of signing authority , here it is self signed
-                    agentCertificateKey = keypair.private
-
-                    // Save the certificate and key
-                    sharedPreferences?.edit()?.putString("agentCert", Base64.encodeToString(agentCertificate?.encoded, Base64.DEFAULT))?.apply()
-                    sharedPreferences?.edit()?.putString("agentKey", Base64.encodeToString(agentCertificateKey?.encoded, Base64.DEFAULT))?.apply()
-                } else {
-                    //println("Loading certificates...")
-                    agentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
-                            ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
-                    ) as X509Certificate
-                    val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
-                    agentCertificateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
-                }
-                //println("Cert: ${agentCertificate.toString()}")
-                //println("XKey: ${agentCertificateKey.toString()}")
-            }
-
-            if (!userInitiated) {
-                meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
-                meshAgent?.Start()
-            } else {
-                if (g_autoConnect) {
-                    if (g_userDisconnect) {
-                        // We are not trying to connect, switch to connecting
-                        g_userDisconnect = false
-                        meshAgent =
-                            MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
-                        meshAgent?.Start()
-                    } else {
-                        // We are trying to connect, switch to not trying
-                        g_userDisconnect = true
-                    }
-                } else {
-                    // We are not in auto connect mode, try to connect
-                    g_userDisconnect = true
-                    meshAgent =
-                        MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
-                    meshAgent?.Start()
-                }
-            }
-        } else if (meshAgent != null) {
-            // Stop the agent
-            if (userInitiated) { g_userDisconnect = true }
-            stopProjection()
-            meshAgent?.Stop()
-            meshAgent = null
-        }
-        mainFragment?.refreshInfo()
+        requestAllPermissions()
+        AgentForegroundService.start(this)
+        AgentController.toggleAgentConnection(userInitiated)
     }
 
     fun showNotification(title: String?, body: String?, url: String?) {
@@ -612,10 +512,20 @@ class MainActivity : AppCompatActivity() {
                 .setAutoCancel(true)
                 //.setLargeIcon(BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher))
                 .setContentIntent(pendingIntent)
+        } else {
+            builder = Notification.Builder(this)
+                .setSmallIcon(R.drawable.ic_message)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
         }
 
         // Add notification
-        notificationManager.notify(0, builder.build())
+        try {
+            notificationManager.notify(0, builder.build())
+        } catch (_: SecurityException) {
+        }
     }
 
     fun isMshStringValid(x: String):Boolean {
@@ -664,74 +574,76 @@ class MainActivity : AppCompatActivity() {
         builder.show()
     }
 
-    // Start screen sharing
     fun startProjection() {
-        if ((g_ScreenCaptureService != null) || (meshAgent == null) || (meshAgent!!.state != 3)) return
+        AgentController.startProjection()
+    }
+
+    fun startMediaProjectionPrompt() {
+        if (AgentController.isRemoteDesktopRunning() || (meshAgent == null) || (meshAgent!!.state != 3)) return
         val mProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         startActivityForResult(mProjectionManager.createScreenCaptureIntent(), MainActivity.Companion.REQUEST_CODE)
     }
 
-    // Stop screen sharing
+    fun promptScreenShareChoice() {
+        if (AgentController.isRemoteDesktopRunning() || (meshAgent == null) || (meshAgent!!.state != 3)) return
+        if (isFinishing || isDestroyed) return
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
+        alert = AlertDialog.Builder(this)
+            .setTitle(R.string.share_screen_choice_title)
+            .setMessage(R.string.share_screen_choice_message)
+            .setPositiveButton(R.string.open_accessibility_settings) { _, _ ->
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .setNeutralButton(R.string.share_screen_once) { _, _ ->
+                startMediaProjectionPrompt()
+            }
+            .setNegativeButton(android.R.string.cancel) { dialog, _ ->
+                sendDesktopConsentDenied()
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    // Per-connection consent prompt shown when Automatic Consent is off.
+    fun promptUnattendedConsent() {
+        if (AgentController.isRemoteDesktopRunning() || (meshAgent == null) || (meshAgent!!.state != 3)) return
+        if (isFinishing || isDestroyed) return
+        if (alert != null) {
+            alert?.dismiss()
+            alert = null
+        }
+        alert = AlertDialog.Builder(this)
+            .setTitle(R.string.share_screen_choice_title)
+            .setMessage(R.string.unattended_consent_message)
+            .setPositiveButton(R.string.share_screen_once) { _, _ ->
+                AgentController.confirmUnattendedConsent()
+            }
+            .setNegativeButton(android.R.string.cancel) { dialog, _ ->
+                sendDesktopConsentDenied()
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    private fun sendDesktopConsentDenied() {
+        val tunnel = meshAgent?.tunnels?.getOrNull(0) ?: return
+        val json = JSONObject()
+        json.put("type", "console")
+        json.put("msg", "denied")
+        json.put("msgid", 2)
+        tunnel.sendCtrlResponse(json)
+        tunnel.Stop()
+    }
+
     fun stopProjection() {
-        if (g_ScreenCaptureService == null) return
-        startService(com.meshcentral.agent.ScreenCaptureService.getStopIntent(this))
+        AgentController.stopProjection()
     }
 
     fun settingsChanged() {
-        this.runOnUiThread {
-            val pm: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-            g_autoConnect = pm.getBoolean("pref_autoconnect", false)
-            g_autoConsent = pm.getBoolean("pref_autoconsent", false)
-            g_userDisconnect = false
-            if (g_autoConnect == false) {
-                if (g_retryTimer != null) {
-                    stopRetryTimer()
-                    mainFragment?.refreshInfo()
-                }
-            } else {
-                if ((meshAgent == null) && (!g_userDisconnect) && (g_retryTimer == null)) {
-                    toggleAgentConnection(false)
-                }
-            }
-            if (g_autoConsent) {
-                startProjection()
-            } else if (!g_autoConsent && g_ScreenCaptureService != null) {
-                stopProjection()
-            }
-        }
-    }
-
-    // Start the connection retry timer, try to connect the agent every 10 seconds
-    private fun startRetryTimer() {
-        this.runOnUiThread {
-            if (g_retryTimer == null) {
-                g_retryTimer = object : CountDownTimer(120000000, 10000) {
-                    override fun onTick(millisUntilFinished: Long) {
-                        println("onTick!!!")
-                        if ((meshAgent == null) && (!g_userDisconnect)) {
-                            toggleAgentConnection(false)
-                        }
-                    }
-
-                    override fun onFinish() {
-                        println("onFinish!!!")
-                        stopRetryTimer()
-                        startRetryTimer()
-                    }
-                }
-                g_retryTimer?.start()
-            }
-        }
-    }
-
-    // Stop the connection retry timer
-    private fun stopRetryTimer() {
-        this.runOnUiThread {
-            if (g_retryTimer != null) {
-                g_retryTimer?.cancel()
-                g_retryTimer = null
-            }
-        }
+        AgentController.settingsChanged()
     }
 
     companion object {

@@ -135,7 +135,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             }
             view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = true
             if (state == 0) {
-                if (g_retryTimer != null) {
+                if (AgentController.isRetrying()) {
                     // Trying to connect
                     view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                     view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =

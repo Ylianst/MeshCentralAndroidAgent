@@ -43,8 +43,8 @@ class MeshUserInfo(userid: String, realname: String?, image: Bitmap?) {
     }
 }
 
-class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId: String) : WebSocketListener() {
-    val parent : MainActivity = parent
+class MeshAgent(parent: AgentHost, host: String, certHash: String, devGroupId: String) : WebSocketListener() {
+    val parent : AgentHost = parent
     val host : String = host
     val serverCertHash: String = certHash
     val devGroupId: String = devGroupId
@@ -308,17 +308,13 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         sendNetworkUpdate(false)
         sendServerImageRequest()
 
-        if (g_autoConsent) {
-            parent.startProjection()
-        }
-
         // Send battery state
         if (_webSocket != null) { _webSocket?.send(getSysBatteryInfo().toString().toByteArray().toByteString()) }
     }
 
     // Cause some data to be sent over the websocket control channel every 2 minutes to keep it open
     private fun startConnectionTimer() {
-        parent.runOnUiThread {
+        parent.runOnHostThread {
             connectionTimer = object: CountDownTimer(120000000, 120000) {
                 override fun onTick(millisUntilFinished: Long) {
                     if (sendNetworkUpdate(false) == false) { // See if we need to update network information
@@ -673,7 +669,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     private fun getSysBatteryInfo() : JSONObject? {
         try {
             val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
-                parent.applicationContext.registerReceiver(null, ifilter)
+                parent.getApplicationContext().registerReceiver(null, ifilter)
             }
             val status: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
             val isCharging: Boolean = status == BatteryManager.BATTERY_STATUS_CHARGING
@@ -884,7 +880,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             }
             "kvmstart" -> {
                 // Start remote desktop
-                if (g_ScreenCaptureService == null) {
+                if (!AgentController.isRemoteDesktopRunning()) {
                     parent.startProjection()
                     r = "ok"
                 } else {
@@ -893,7 +889,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             }
             "kvmstop" -> {
                 // Stop remote desktop
-                if (g_ScreenCaptureService != null) {
+                if (AgentController.isRemoteDesktopRunning()) {
                     parent.stopProjection()
                     r = "ok"
                 } else {
