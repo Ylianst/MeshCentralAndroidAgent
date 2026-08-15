@@ -35,7 +35,7 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="64dp"
         android:gravity="center|center_horizontal"
-        android:text="TextView"
+        tools:text="TextView"
         android:textSize="18sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -43,6 +43,7 @@
 
     <ImageView
         android:id="@+id/mainImageView"
+        android:contentDescription="@string/meshcentral"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:alpha=".5"

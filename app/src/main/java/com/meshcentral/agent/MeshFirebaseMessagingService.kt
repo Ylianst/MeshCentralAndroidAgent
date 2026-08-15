@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.os.VibratorManager
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -44,7 +45,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
         }
 
         // The data is empty or the server is not set, bad notification.
-        if ((remoteMessage.data == null) || (remoteMessage.data["shash"] == null) || (serverLink == null) || (remoteMessage.data["shash"]!!.length < 12)) return;
+        if ((remoteMessage.data["shash"] == null) || (serverLink == null) || (remoteMessage.data["shash"]!!.length < 12)) return;
 
         // Check the server's agent hash against the notification.
         var x : List<String> = serverLink!!.split(',')
@@ -76,7 +77,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
                 println("Showing notification with URL: $url");
                 g_mainActivity?.showNotification(remoteMessage.notification?.title, remoteMessage.notification?.body, url)
             }
-        } else if (remoteMessage.data != null) {
+        } else {
             var cmd : String? = remoteMessage.data["con"]
             var session : String? = remoteMessage.data["s"]
             var relayId : String? = remoteMessage.data["r"]
@@ -84,6 +85,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
+    @Suppress("DEPRECATION")
     fun sendMessage(to:String, cmd:String, session:String, relayId: String?) {
         println("sendMessage: $to, $cmd, $session")
         val fm = FirebaseMessaging.getInstance()
@@ -144,8 +146,13 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
                     var t : Long = 0
                     try { t = splitCmd[1].toLong() } catch (e : Exception) {}
                     if ((t > 0) && (t <= 10000)) {
-                        val v = g_mainActivity!!.getApplicationContext()
-                                .getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                        val ctx = g_mainActivity!!.getApplicationContext()
+                        val v: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            (ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+                        } else {
+                            @Suppress("DEPRECATION")
+                            (ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+                        }
                         if (v == null) {
                             r = "Not supported"
                         } else {
@@ -158,6 +165,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
                                         )
                                 )
                             } else {
+                                @Suppress("DEPRECATION")
                                 v.vibrate(t)
                             }
                             r = "ok"
@@ -234,12 +242,13 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
     private fun getNetInfo() : JSONObject {
         var r = JSONObject()
         for (n in NetworkInterface.getNetworkInterfaces()) {
-            if (n.hardwareAddress != null) {
+            val hardwareAddress = n.hardwareAddress
+            if (hardwareAddress != null) {
                 var s = JSONArray()
                 var count = 0
                 for (j in n.interfaceAddresses) {
-                    var mac = n.hardwareAddress.toHex().toUpperCase()
-                    var mac2 = mac.substring(0,2) + ":" + mac.substring(2,4) + ":" + mac.substring(4,6) + ":" + mac.substring(6,8) + ":" + mac.substring(8,10) + ":" + mac.substring(10, 12)
+                    val mac = hardwareAddress.toHex().uppercase(java.util.Locale.ROOT)
+                    val mac2 = mac.chunked(2).joinToString(":")
                     var x = JSONObject()
                     x.put("address", j.address.hostAddress)
                     x.put("mac", mac2)
@@ -248,7 +257,7 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
                     } else {
                         x.put("status", "down")
                     }
-                    if (j.address.hostAddress.indexOf(':') >= 0) {
+                    if ((j.address.hostAddress?.indexOf(':') ?: -1) >= 0) {
                         x.put("family", "IPv6")
                     } else {
                         x.put("family", "IPv4")

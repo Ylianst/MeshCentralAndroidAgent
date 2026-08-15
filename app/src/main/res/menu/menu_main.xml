@@ -46,5 +46,6 @@
         android:id="@+id/action_testAuth"
         android:orderInCategory="106"
         android:title="Test Auth"
-        app:showAsAction="never" />
+        app:showAsAction="never"
+        tools:ignore="HardcodedText" />
 </menu>

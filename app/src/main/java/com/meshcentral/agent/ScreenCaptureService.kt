@@ -19,8 +19,8 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.CountDownTimer
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
 import android.view.Display
 import android.view.OrientationEventListener
 import android.view.WindowManager
@@ -34,8 +34,10 @@ class ScreenCaptureService : Service() {
     private var mMediaProjection: MediaProjection? = null
     private var mImageReader: ImageReader? = null
     private var mHandler: Handler? = null
+    private var mHandlerThread: HandlerThread? = null
     private var mDisplay: Display? = null
     private var mVirtualDisplay: VirtualDisplay? = null
+    private var mProjectionCallback: MediaProjection.Callback? = null
     private var mDensity = 0
     private var mRotation = 0
     private var mOrientationChangeCallback: ScreenCaptureService.OrientationChangeCallback? = null
@@ -77,7 +79,7 @@ class ScreenCaptureService : Service() {
 
                     // Create the bitmap
                     bitmap = Bitmap.createBitmap(mWidth + rowPadding / pixelStride, mHeight, Bitmap.Config.ARGB_8888)
-                    bitmap!!.copyPixelsFromBuffer(buffer)
+                    bitmap.copyPixelsFromBuffer(buffer)
 
                     // Resize the bitmap if needed
                     if (g_desktop_scalingLevel != 1024) {
@@ -141,7 +143,7 @@ class ScreenCaptureService : Service() {
                                 }
                                 if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
                             }
-                            if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); sendx = -1; }
+                            if (sendx != -1) { sendSubBitmapRow(bitmap, sendx, sendy, sendw); }
                         }
                     }
                 }
@@ -225,11 +227,8 @@ class ScreenCaptureService : Service() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
             } else {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    cropedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
-                } else {
-                    cropedBitmap.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
-                }
+                @Suppress("DEPRECATION")
+                cropedBitmap.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
             }
         } else if (g_desktop_imageType == 2) { // PNG
             cropedBitmap.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
@@ -261,11 +260,8 @@ class ScreenCaptureService : Service() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                 bm.compress(Bitmap.CompressFormat.WEBP_LOSSY, g_desktop_compressionLevel, dos)
             } else {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    bm.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, g_desktop_compressionLevel, dos)
-                } else {
-                    bm.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
-                }
+                @Suppress("DEPRECATION")
+                bm.compress(Bitmap.CompressFormat.WEBP, g_desktop_compressionLevel, dos)
             }
         } else if (g_desktop_imageType == 2) { // PNG
             bm.compress(Bitmap.CompressFormat.PNG, g_desktop_compressionLevel, dos)
@@ -327,12 +323,15 @@ class ScreenCaptureService : Service() {
     private inner class MediaProjectionStopCallback : MediaProjection.Callback() {
         override fun onStop() {
             //Log.e(ScreenCaptureService.Companion.TAG, "stopping projection.")
-            if (mHandler != null) {
-                mHandler!!.post {
-                    if (mVirtualDisplay != null) mVirtualDisplay!!.release()
-                    if (mImageReader != null) mImageReader!!.setOnImageAvailableListener(null, null)
-                    if (mOrientationChangeCallback != null) mOrientationChangeCallback!!.disable()
-                    mMediaProjection!!.unregisterCallback(this@MediaProjectionStopCallback)
+            mHandler?.post {
+                releaseDisplayResources()
+                mOrientationChangeCallback?.disable()
+                mOrientationChangeCallback = null
+                mMediaProjection?.unregisterCallback(this@MediaProjectionStopCallback)
+                mProjectionCallback = null
+                mMediaProjection = null
+                if (g_ScreenCaptureService === this@ScreenCaptureService) {
+                    g_ScreenCaptureService = null
                 }
             }
         }
@@ -344,15 +343,26 @@ class ScreenCaptureService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        mHandlerThread = HandlerThread("ScreenCaptureService")
+        mHandlerThread!!.start()
+        mHandler = Handler(mHandlerThread!!.looper)
+    }
 
-        // start capture handling thread
-        object : Thread() {
-            override fun run() {
-                Looper.prepare()
-                mHandler = Handler()
-                Looper.loop()
-            }
-        }.start()
+    override fun onDestroy() {
+        mProjectionCallback?.let { mMediaProjection?.unregisterCallback(it) }
+        mProjectionCallback = null
+        mOrientationChangeCallback?.disable()
+        mOrientationChangeCallback = null
+        releaseDisplayResources()
+        val mediaProjection = mMediaProjection
+        mMediaProjection = null
+        mediaProjection?.stop()
+        if (g_ScreenCaptureService === this) g_ScreenCaptureService = null
+        mHandler?.removeCallbacksAndMessages(null)
+        mHandler = null
+        mHandlerThread?.quitSafely()
+        mHandlerThread = null
+        super.onDestroy()
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -362,7 +372,12 @@ class ScreenCaptureService : Service() {
             startForeground(notification.first!!, notification.second)
             // Start projection
             val resultCode = intent.getIntExtra(ScreenCaptureService.Companion.RESULT_CODE, Activity.RESULT_CANCELED)
-            val data = intent.getParcelableExtra<Intent>(ScreenCaptureService.Companion.DATA)
+            val data = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(ScreenCaptureService.Companion.DATA, Intent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<Intent>(ScreenCaptureService.Companion.DATA)
+            }
             startProjection(resultCode, data)
         } else if (ScreenCaptureService.Companion.isStopCommand(intent)) {
             stopProjection()
@@ -390,6 +405,7 @@ class ScreenCaptureService : Service() {
                     val displayManager = applicationContext.getSystemService(DISPLAY_SERVICE) as DisplayManager
                     mDisplay = displayManager.getDisplay(Display.DEFAULT_DISPLAY)
                 } else {
+                    @Suppress("DEPRECATION")
                     mDisplay = windowManager.defaultDisplay
                 }
 
@@ -427,6 +443,14 @@ class ScreenCaptureService : Service() {
         }
     }
 
+    private fun releaseDisplayResources() {
+        mImageReader?.setOnImageAvailableListener(null, null)
+        mImageReader?.close()
+        mImageReader = null
+        mVirtualDisplay?.release()
+        mVirtualDisplay = null
+    }
+
     @SuppressLint("WrongConstant")
     private fun createVirtualDisplay() {
         // Get width and height
@@ -439,7 +463,10 @@ class ScreenCaptureService : Service() {
         // Start capture reader
         mImageReader = ImageReader.newInstance(mWidth, mHeight, PixelFormat.RGBA_8888, 2)
         // Register media projection stop callback
-        mMediaProjection!!.registerCallback(this.MediaProjectionStopCallback(), mHandler)
+        if (mProjectionCallback == null) {
+            mProjectionCallback = this.MediaProjectionStopCallback()
+            mMediaProjection!!.registerCallback(mProjectionCallback!!, mHandler)
+        }
         mVirtualDisplay = mMediaProjection!!.createVirtualDisplay(ScreenCaptureService.Companion.SCREENCAP_NAME, mWidth, mHeight,
                 mDensity, ScreenCaptureService.Companion.virtualDisplayFlags, mImageReader!!.surface, null, mHandler)
 
@@ -478,7 +505,7 @@ class ScreenCaptureService : Service() {
         }
 
         private val virtualDisplayFlags: Int
-        private get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
+        get() = DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC
     }
 
     fun updateTunnelDisplaySize() {

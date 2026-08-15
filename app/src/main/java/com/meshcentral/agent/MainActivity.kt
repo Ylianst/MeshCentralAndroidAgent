@@ -2,6 +2,7 @@ package com.meshcentral.agent
 
 //import com.google.firebase.iid.FirebaseInstanceId
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Notification
@@ -20,38 +21,38 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.security.keystore.KeyProtection
 import android.provider.Settings
 import android.text.InputType
 import android.util.Base64
+import android.util.Log
 import android.view.Gravity
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.EditText
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONObject
-import org.spongycastle.asn1.x500.X500Name
-import org.spongycastle.cert.X509v3CertificateBuilder
-import org.spongycastle.cert.jcajce.JcaX509CertificateConverter
-import org.spongycastle.cert.jcajce.JcaX509v3CertificateBuilder
-import org.spongycastle.jce.provider.BouncyCastleProvider
-import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
+import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.SecureRandom
-import java.security.Security
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
 import java.util.Random
+import javax.security.auth.x500.X500Principal
 import kotlin.math.absoluteValue
 
 
@@ -65,6 +66,7 @@ val hardCodedServerLink : String? = null
 var g_mainActivity : MainActivity? = null
 var mainFragment : MainFragment? = null
 var scannerFragment : ScannerFragment? = null
+@SuppressLint("StaticFieldLeak")
 var webFragment : WebViewFragment? = null
 var authFragment : AuthFragment? = null
 var settingsFragment: SettingsFragment? = null
@@ -100,13 +102,31 @@ class MainActivity : AppCompatActivity() {
     lateinit var notificationManager: NotificationManager
     lateinit var builder: Notification.Builder
 
-    init {
-        Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
-        Security.insertProviderAt(BouncyCastleProvider(), 1)
+    private val screenCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            startService(ScreenCaptureService.getStartIntent(this, result.resultCode, result.data))
+            meshAgent?.tunnels?.getOrNull(0)?.sendCtrlResponse(JSONObject().apply {
+                put("type", "console")
+                put("msg", null)
+                put("msgid", 0)
+            })
+        } else {
+            meshAgent?.tunnels?.getOrNull(0)?.let { tunnel ->
+                tunnel.sendCtrlResponse(JSONObject().apply {
+                    put("type", "console")
+                    put("msg", "denied")
+                    put("msgid", 2)
+                })
+                tunnel.Stop()
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         g_mainActivity = this
+        meshAgent?.attachParent(this)
         val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
         if (hardCodedServerLink != null) {
             // Use the hard coded server link
@@ -133,7 +153,7 @@ class MainActivity : AppCompatActivity() {
         registerReceiver(batteryInfoReceiver, intentFilter)
 
         // Check if this device has a camera
-        cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)
+        cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
 
         //val fcmId = FirebaseInstallations.getInstance().id
         val fcmToken = FirebaseMessaging.getInstance().token
@@ -149,7 +169,7 @@ class MainActivity : AppCompatActivity() {
         }
         */
 
-        // See if we there open by a notification with a URL
+        // See if we were opened by a notification with a URL
         var intentUrl : String? = intent.getStringExtra("url")
         //println("Main Activity Create URL: $intentUrl")
         if (intentUrl != null) {
@@ -227,6 +247,7 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    @SuppressLint("InlinedApi")
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         // Handle action bar item clicks here. The action bar will
         // automatically handle clicks on the Home/Up button, so long
@@ -286,7 +307,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        g_mainActivity = null
+        unregisterReceiver(batteryInfoReceiver)
+        if (g_mainActivity === this) g_mainActivity = null
         if (alert != null) {
             alert?.dismiss()
             alert = null
@@ -297,30 +319,6 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         println("onActivityResult, requestCode: $requestCode, resultCode: $resultCode, data: ${data.toString()}")
         super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == MainActivity.Companion.REQUEST_CODE) {
-            if (resultCode == RESULT_OK) {
-                startService(com.meshcentral.agent.ScreenCaptureService.getStartIntent(this, resultCode, data))
-                if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                    val json = JSONObject()
-                    json.put("type", "console")
-                    json.put("msg", null)
-                    json.put("msgid", 0)
-                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                }
-                return
-            } else {
-                if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                    val json = JSONObject()
-                    json.put("type", "console")
-                    json.put("msg", "denied")
-                    json.put("msgid", 2)
-                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                    meshAgent!!.tunnels[0].Stop()
-                }
-                return
-            }
-        }
 
         var pad : PendingActivityData? = null
         for (b in pendingActivities) { if (b.id == requestCode) { pad = b } }
@@ -468,14 +466,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Check and add external storage permissions if necessary
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
+        }
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
                 permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_DENIED) {
                 permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
             }
@@ -496,7 +497,7 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_ALL_PERMISSIONS) {
-            permissions.forEachIndexed { index, permission ->
+            permissions.forEachIndexed { index, _ ->
                 if (grantResults[index] == PackageManager.PERMISSION_DENIED) {
                     // Handle each denied permission if necessary
                 }
@@ -509,47 +510,9 @@ class MainActivity : AppCompatActivity() {
         if ((meshAgent == null) && (serverLink != null)) {
             // Create and connect the agent
             requestAllPermissions();
-            if (agentCertificate == null) {
-                val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
-                var certb64 : String? = sharedPreferences?.getString("agentCert", null)
-                var keyb64 : String? = sharedPreferences?.getString("agentKey", null)
-                if ((certb64 == null) || (keyb64 == null)) {
-                    //println("Generating new certificates...")
-
-                    // Generate an RSA key pair
-                    val keyGen = KeyPairGenerator.getInstance("RSA")
-                    keyGen.initialize(2048, SecureRandom())
-                    val keypair = keyGen.generateKeyPair()
-
-                    // Generate Serial Number
-                    var serial : BigInteger = BigInteger("12345678");
-                    try { serial = BigInteger.valueOf(Random().nextInt().toLong().absoluteValue) } catch (ex: Exception) {}
-
-                    // Create self signed certificate
-                    val builder: X509v3CertificateBuilder = JcaX509v3CertificateBuilder(
-                            X500Name("CN=android.agent.meshcentral.com"), // issuer authority
-                            serial, // serial number of certificate
-                            Date(System.currentTimeMillis() - 86400000L * 365), // start of validity
-                            Date(253402300799000L), // end of certificate validity
-                            X500Name("CN=android.agent.meshcentral.com"), // subject name of certificate
-                            keypair.public) // public key of certificate
-                    agentCertificate = JcaX509CertificateConverter().setProvider("SC").getCertificate(builder
-                            .build(JcaContentSignerBuilder("SHA256withRSA").build(keypair.private))) // Private key of signing authority , here it is self signed
-                    agentCertificateKey = keypair.private
-
-                    // Save the certificate and key
-                    sharedPreferences?.edit()?.putString("agentCert", Base64.encodeToString(agentCertificate?.encoded, Base64.DEFAULT))?.apply()
-                    sharedPreferences?.edit()?.putString("agentKey", Base64.encodeToString(agentCertificateKey?.encoded, Base64.DEFAULT))?.apply()
-                } else {
-                    //println("Loading certificates...")
-                    agentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
-                            ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
-                    ) as X509Certificate
-                    val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
-                    agentCertificateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
-                }
-                //println("Cert: ${agentCertificate.toString()}")
-                //println("XKey: ${agentCertificateKey.toString()}")
+            if (!ensureAgentIdentity()) {
+                mainFragment?.refreshInfo()
+                return
             }
 
             if (!userInitiated) {
@@ -585,6 +548,65 @@ class MainActivity : AppCompatActivity() {
         mainFragment?.refreshInfo()
     }
 
+    private fun ensureAgentIdentity(): Boolean {
+        if ((agentCertificate != null) && (agentCertificateKey != null)) return true
+
+        val sharedPreferences = getSharedPreferences("meshagent", Context.MODE_PRIVATE)
+        return try {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (!keyStore.containsAlias(AGENT_KEY_ALIAS)) {
+                val certb64 = sharedPreferences.getString("agentCert", null)
+                val keyb64 = sharedPreferences.getString("agentKey", null)
+                if ((certb64 != null) && (keyb64 != null)) {
+                    val certificate = CertificateFactory.getInstance("X509").generateCertificate(
+                        ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
+                    ) as X509Certificate
+                    val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
+                    val privateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
+                    val protection = KeyProtection.Builder(KeyProperties.PURPOSE_SIGN)
+                        .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384)
+                        .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                        .build()
+                    keyStore.setEntry(
+                        AGENT_KEY_ALIAS,
+                        KeyStore.PrivateKeyEntry(privateKey, arrayOf(certificate)),
+                        protection
+                    )
+                } else {
+                    generateAgentIdentity()
+                }
+            }
+
+            agentCertificate = keyStore.getCertificate(AGENT_KEY_ALIAS) as X509Certificate
+            agentCertificateKey = keyStore.getKey(AGENT_KEY_ALIAS, null) as PrivateKey
+            sharedPreferences.edit().remove("agentCert").remove("agentKey").apply()
+            true
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to load or create agent identity", error)
+            agentCertificate = null
+            agentCertificateKey = null
+            showAlertMessage(getString(R.string.agent_identity_error_title), getString(R.string.agent_identity_error_message))
+            false
+        }
+    }
+
+    private fun generateAgentIdentity() {
+        val keyGen = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, ANDROID_KEYSTORE)
+        val now = System.currentTimeMillis()
+        keyGen.initialize(
+            KeyGenParameterSpec.Builder(AGENT_KEY_ALIAS, KeyProperties.PURPOSE_SIGN)
+                .setKeySize(2048)
+                .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384)
+                .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                .setCertificateSubject(X500Principal("CN=android.agent.meshcentral.com"))
+                .setCertificateSerialNumber(BigInteger(63, SecureRandom()).max(BigInteger.ONE))
+                .setCertificateNotBefore(Date(now - ONE_DAY_MILLIS))
+                .setCertificateNotAfter(Date(now + CERTIFICATE_LIFETIME_MILLIS))
+                .build()
+        )
+        keyGen.generateKeyPair()
+    }
+
     fun showNotification(title: String?, body: String?, url: String?) {
         //println("showNotification: $title, $body")
 
@@ -618,17 +640,6 @@ class MainActivity : AppCompatActivity() {
         notificationManager.notify(0, builder.build())
     }
 
-    fun isMshStringValid(x: String):Boolean {
-        if (x.startsWith("mc://") == false)  return false
-        var xs = x.split(',')
-        if (xs.count() < 3) return false
-        if (xs[0].length < 8) return false
-        if (xs[1].length < 3) return false
-        if (xs[2].length < 3) return false
-        if (xs[0].indexOf('.') == -1) return false
-        return true
-    }
-
     // Show alert asking for server pairing link
     fun promptForServerLink() {
         if (hardCodedServerLink != null) return
@@ -644,7 +655,7 @@ class MainActivity : AppCompatActivity() {
         builder.setPositiveButton(android.R.string.ok) { _, _ ->
             var link = input.text.toString()
             println("LINK: $link")
-            if (isMshStringValid(link)) {
+            if (isMeshServerLinkValid(link)) {
                 setMeshServerLink(link)
             } else {
                 indicateInvalidLink()
@@ -668,7 +679,7 @@ class MainActivity : AppCompatActivity() {
     fun startProjection() {
         if ((g_ScreenCaptureService != null) || (meshAgent == null) || (meshAgent!!.state != 3)) return
         val mProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        startActivityForResult(mProjectionManager.createScreenCaptureIntent(), MainActivity.Companion.REQUEST_CODE)
+        screenCaptureLauncher.launch(mProjectionManager.createScreenCaptureIntent())
     }
 
     // Stop screen sharing
@@ -735,7 +746,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val REQUEST_CODE = 100
+        private const val TAG = "MainActivity"
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val AGENT_KEY_ALIAS = "meshcentral-agent-identity"
         const val REQUEST_ALL_PERMISSIONS = 1
+        private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
+        private const val CERTIFICATE_LIFETIME_MILLIS = 20L * 365L * ONE_DAY_MILLIS
     }
 }

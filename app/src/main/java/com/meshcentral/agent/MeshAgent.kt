@@ -1,5 +1,6 @@
 package com.meshcentral.agent
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -23,6 +24,7 @@ import java.net.NetworkInterface
 import java.security.MessageDigest
 import java.security.Signature
 import java.security.cert.CertificateFactory
+import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPublicKey
 import java.util.concurrent.TimeUnit
@@ -43,8 +45,11 @@ class MeshUserInfo(userid: String, realname: String?, image: Bitmap?) {
     }
 }
 
+@SuppressLint("CustomX509TrustManager", "InlinedApi")
 class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId: String) : WebSocketListener() {
-    val parent : MainActivity = parent
+    @Volatile
+    var parent : MainActivity = parent
+        private set
     val host : String = host
     val serverCertHash: String = certHash
     val devGroupId: String = devGroupId
@@ -65,6 +70,10 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
     init {
         //println("MeshAgent Constructor: ${host}, ${certHash}, $devGroupId")
+    }
+
+    fun attachParent(parent: MainActivity) {
+        this.parent = parent
     }
 
     fun Start() {
@@ -96,7 +105,8 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) {}
 
             override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-                serverTlsCertHash = MessageDigest.getInstance("SHA-384").digest(chain?.get(0)?.encoded)
+                val certificate = chain?.firstOrNull() ?: throw CertificateException("Server sent no TLS certificate")
+                serverTlsCertHash = MessageDigest.getInstance("SHA-384").digest(certificate.encoded)
             }
 
             override fun getAcceptedIssuers() = arrayOf<X509Certificate>()
@@ -167,6 +177,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         //println("onMessage: $text")
     }
 
+    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun onMessage(webSocket: WebSocket, msg: ByteString) {
         try {
             //println("onBinaryMessage: ${msg.size}, ${msg.toByteArray().toHex()}")
@@ -240,7 +251,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     connectionState = connectionState or 1
 
                     //println("Host: ${android.os.Build.HOST}")
-                    var agentid = 14;           // This of agent (14, Android in this case)
+                    var agentid = 14;           // Type of agent (14, Android in this case)
                     var agentver = 0            // Agent version (TODO)
                     var platfromType = 3;       // This is the icon: 1 = Desktop, 2 = Laptop, 3 = Mobile, 4 = Server, 5 = Disk, 6 = Router
                     var capabilities = 12;      // Capabilities of the agent (bitmask): 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript
@@ -323,7 +334,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 override fun onTick(millisUntilFinished: Long) {
                     if (sendNetworkUpdate(false) == false) { // See if we need to update network information
                         if (_webSocket != null) {
-                            _webSocket?.send(ByteArray(1).toByteString()) // If not, sent a single zero byte
+                            _webSocket?.send(ByteArray(1).toByteString()) // If not, send a single zero byte
                         }
                     }
                 }
@@ -395,7 +406,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     */
 
                     var xurl = json.optString("url")
-                    if (xurl != null) {
+                    if (xurl.isNotEmpty()) {
                         var getintent: Intent = Intent(Intent.ACTION_VIEW, Uri.parse(xurl));
                         parent.startActivity(getintent);
                     }
@@ -471,7 +482,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                             xuserImage = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 
                             // Round the image edges
-                            val imageRounded = Bitmap.createBitmap(xuserImage.getWidth(), xuserImage.getHeight(), xuserImage.getConfig())
+                            val imageRounded = Bitmap.createBitmap(xuserImage.getWidth(), xuserImage.getHeight(), xuserImage.getConfig() ?: Bitmap.Config.ARGB_8888)
                             val canvas = Canvas(imageRounded)
                             val mpaint = Paint()
                             mpaint.setAntiAlias(true)
@@ -633,16 +644,17 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             for (j in n.interfaceAddresses) {
                 var x = JSONObject()
                 x.put("address", j.address.hostAddress)
-                if (n.hardwareAddress != null) {
-                    var mac = n.hardwareAddress.toHex().toUpperCase()
-                    x.put("mac", mac.substring(0, 2) + ":" + mac.substring(2, 4) + ":" + mac.substring(4, 6) + ":" + mac.substring(6, 8) + ":" + mac.substring(8, 10) + ":" + mac.substring(10, 12))
+                val hardwareAddress = n.hardwareAddress
+                if (hardwareAddress != null) {
+                    val mac = hardwareAddress.toHex().uppercase(java.util.Locale.ROOT)
+                    x.put("mac", mac.chunked(2).joinToString(":"))
                 }
                 if (n.isUp) {
                     x.put("status", "up")
                 } else {
                     x.put("status", "down")
                 }
-                if (j.address.hostAddress.indexOf(':') >= 0) {
+                if ((j.address.hostAddress?.indexOf(':') ?: -1) >= 0) {
                     x.put("family", "IPv6")
                 } else {
                     x.put("family", "IPv4")
@@ -656,6 +668,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         return r
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun batteryStateChanged(intent: Intent) {
         // Get the battery status, if it did not chance, don't send anything to the server
         var battState : JSONObject? = getSysBatteryInfo();
@@ -740,20 +753,20 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     r = "Usage:\r\n  alert \"Message\" \"Title\"";
                 } else if (splitCmd.size == 2) {
                     // Event to the server
-                    var eventArgs = JSONArray()
-                    eventArgs.put("Alert")
-                    eventArgs.put(splitCmd[1])
-                    logServerEventEx(18, eventArgs, "Displaying message box, title=" + splitCmd[2] + ", message=" + splitCmd[1], jsoncmd);
+                    var alertArgs = JSONArray()
+                    alertArgs.put("Alert")
+                    alertArgs.put(splitCmd[1])
+                    logServerEventEx(18, alertArgs, "Displaying message box, title=" + splitCmd[2] + ", message=" + splitCmd[1], jsoncmd);
 
                     // Show the alert
                     parent.showAlertMessage("Alert", splitCmd[1])
                     r = "Ok";
                 } else if (splitCmd.size > 2) {
                     // Event to the server
-                    var eventArgs = JSONArray()
-                    eventArgs.put(splitCmd[2])
-                    eventArgs.put(splitCmd[1])
-                    logServerEventEx(18, eventArgs, "Displaying message box, title=" + splitCmd[2] + ", message=" + splitCmd[1], jsoncmd);
+                    var alertArgs = JSONArray()
+                    alertArgs.put(splitCmd[2])
+                    alertArgs.put(splitCmd[1])
+                    logServerEventEx(18, alertArgs, "Displaying message box, title=" + splitCmd[2] + ", message=" + splitCmd[1], jsoncmd);
 
                     // Show the alert
                     parent.showAlertMessage(splitCmd[2], splitCmd[1])
@@ -768,10 +781,10 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     parent.showToastMessage(splitCmd[1])
 
                     // Event to the server
-                    var eventArgs = JSONArray()
-                    eventArgs.put("None")
-                    eventArgs.put(splitCmd[1])
-                    logServerEventEx(26, eventArgs, "Displaying toast message, title=None, message=${splitCmd[1]}", jsoncmd);
+                    var toastArgs = JSONArray()
+                    toastArgs.put("None")
+                    toastArgs.put(splitCmd[1])
+                    logServerEventEx(26, toastArgs, "Displaying toast message, title=None, message=${splitCmd[1]}", jsoncmd);
                     r = "Ok";
                 }
             }
@@ -842,9 +855,9 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                                 r = "Ok";
 
                                 // Event to the server
-                                var eventArgs = JSONArray()
-                                eventArgs.put(splitCmd[1])
-                                logServerEventEx(20, eventArgs, "Opening: ${splitCmd[1]}", jsoncmd);
+                                var openUrlArgs = JSONArray()
+                                openUrlArgs.put(splitCmd[1])
+                                logServerEventEx(20, openUrlArgs, "Opening: ${splitCmd[1]}", jsoncmd);
                             } else {
                                 r = "Busy";
                             }
@@ -911,8 +924,13 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     } catch (e: Exception) {
                     }
                     if ((t > 0) && (t <= 10000)) {
-                        val v = parent.getApplicationContext()
-                                .getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                        val ctx = parent.getApplicationContext()
+                        val v: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            (ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
+                        } else {
+                            @Suppress("DEPRECATION")
+                            (ctx.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator)
+                        }
                         if (v == null) {
                             r = "Not supported"
                         } else {
@@ -925,6 +943,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                                         )
                                 )
                             } else {
+                                @Suppress("DEPRECATION")
                                 v.vibrate(t)
                             }
                             r = "ok"

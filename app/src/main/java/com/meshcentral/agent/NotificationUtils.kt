@@ -1,5 +1,4 @@
 package com.meshcentral.agent
-import android.R
 import android.annotation.TargetApi
 import android.app.Notification
 import android.app.NotificationChannel
@@ -42,7 +41,7 @@ object NotificationUtils {
         builder.setContentText(context.getString(com.meshcentral.agent.R.string.displaysharing))
         builder.setOngoing(true)
         builder.setCategory(Notification.CATEGORY_SERVICE)
-        builder.priority = Notification.PRIORITY_LOW
+        builder.priority = NotificationCompat.PRIORITY_LOW
         builder.setShowWhen(true)
         return builder.build()
     }
