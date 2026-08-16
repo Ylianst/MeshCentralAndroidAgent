@@ -37,7 +37,7 @@ no-ops. This app does not currently provide general remote input control.
 | Kotlin namespace | `com.meshcentral.agent` |
 | Minimum Android SDK | 23 (Android 6.0) |
 | Compile/target SDK | 35 (Android 15) |
-| Version | `1.0.21` (`versionCode` 28) |
+| Version | `1.0.22` (`versionCode` 29) |
 | Kotlin | 1.9.10 |
 | Android Gradle Plugin | 8.6.1 |
 | Gradle wrapper | 8.7 |
