@@ -15,7 +15,8 @@ swipe, type, or otherwise control the Android device.
 ## Get MeshAgent
 
 - [Install MeshAgent for Android from Google Play](https://play.google.com/store/apps/details?id=com.meshcentral.agent2)
-- [View the source code and releases on GitHub](https://github.com/Ylianst/MeshCentralAndroidAgent)
+- [Download the APK or AAB from the latest release](https://github.com/Ylianst/MeshCentralAndroidAgent/releases/latest)
+- [View the source code on GitHub](https://github.com/Ylianst/MeshCentralAndroidAgent)
 
 Android 6.0 (API 23) or later and a MeshCentral server configured to enroll
 Android agents are required. Pair a device by scanning a MeshCentral QR code,

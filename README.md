@@ -24,6 +24,9 @@ or stop capture at any time.
 
 Install MeshAgent for Android from [Google Play](https://play.google.com/store/apps/details?id=com.meshcentral.agent2).
 
+Or download the APK or AAB from the
+[latest release](https://github.com/Ylianst/MeshCentralAndroidAgent/releases/latest).
+
 ## Requirements
 
 - Android 6.0 (API 23) or later.
