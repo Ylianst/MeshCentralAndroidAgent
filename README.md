@@ -44,6 +44,8 @@ releases require a dedicated signing keystore; see the release guide below.
 
 ## Documentation
 
+- [Documentation site](https://ylianst.github.io/MeshCentralAndroidAgent/) -
+	published project documentation.
 - [Documentation home](docs/index.md) - introduction, installation, key
 	capabilities, and links to all project resources.
 - [Repository overview](docs/overview.md) - architecture, components, project
