@@ -20,6 +20,10 @@ it cannot tap, swipe, type, or otherwise control the device. Android displays a
 foreground notification while screen sharing is active, and the user can deny
 or stop capture at any time.
 
+## Install
+
+Install MeshAgent for Android from [Google Play](https://play.google.com/store/apps/details?id=com.meshcentral.agent2).
+
 ## Requirements
 
 - Android 6.0 (API 23) or later.
@@ -40,6 +44,8 @@ releases require a dedicated signing keystore; see the release guide below.
 
 ## Documentation
 
+- [Documentation home](docs/index.md) - introduction, installation, key
+	capabilities, and links to all project resources.
 - [Repository overview](docs/overview.md) - architecture, components, project
 	configuration, and development notes.
 - [Remote desktop](docs/remote-desktop.md) - screen-capture flow, consent,
