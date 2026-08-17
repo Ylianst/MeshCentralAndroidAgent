@@ -1,6 +1,5 @@
 plugins {
     id 'com.android.application'
-    id 'kotlin-android'
     id 'com.google.gms.google-services'
 }
 
@@ -22,8 +21,8 @@ android {
         }
     }
     defaultConfig {
-        compileSdk 35
-        targetSdk 35
+        compileSdk 37
+        targetSdk 37
         applicationId "com.meshcentral.agent2"
         minSdk 23
         versionCode 29
@@ -60,8 +59,8 @@ android {
         // Trust managers implement the MeshCentral certificate-pinned handshake; the only
         // remaining report is inside the Bouncy Castle crypto library, which we cannot annotate.
         disable 'TrustAllX509TrustManager'
-        // Dependency and target-SDK bumps require a separate compileSdk 36 migration.
-        disable 'GradleDependency', 'OldTargetApi'
+        // Dependency upgrades are managed separately from Android SDK migrations.
+        disable 'GradleDependency'
         // The agent intentionally requests full media access to enumerate device storage.
         disable 'SelectedPhotoAccess'
     }
@@ -73,9 +72,6 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = '17'
     }
     namespace 'com.meshcentral.agent'
 }

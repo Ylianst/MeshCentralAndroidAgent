@@ -101,6 +101,8 @@ class MainActivity : AppCompatActivity() {
     lateinit var notificationChannel: NotificationChannel
     lateinit var notificationManager: NotificationManager
     lateinit var builder: Notification.Builder
+    private var pendingConnectionUserInitiated: Boolean? = null
+    private var localNetworkPermissionRequested = false
 
     private val screenCaptureLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -496,48 +498,39 @@ class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_ALL_PERMISSIONS) {
-            permissions.forEachIndexed { index, _ ->
-                if (grantResults[index] == PackageManager.PERMISSION_DENIED) {
-                    // Handle each denied permission if necessary
-                }
+        if (requestCode == REQUEST_LOCAL_NETWORK_PERMISSION) {
+            val pendingConnection = pendingConnectionUserInitiated
+            pendingConnectionUserInitiated = null
+            if (pendingConnection != null && meshAgent == null && serverLink != null) {
+                connectAgent(pendingConnection)
+                mainFragment?.refreshInfo()
             }
         }
+    }
+
+    private fun hasLocalNetworkPermission(): Boolean {
+        return Build.VERSION.SDK_INT < 37 || ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_LOCAL_NETWORK
+        ) == PackageManager.PERMISSION_GRANTED
     }
 
     fun toggleAgentConnection(userInitiated : Boolean) {
         //println("toggleAgentConnection")
         if ((meshAgent == null) && (serverLink != null)) {
             // Create and connect the agent
-            requestAllPermissions();
-            if (!ensureAgentIdentity()) {
-                mainFragment?.refreshInfo()
+            if (!hasLocalNetworkPermission() && pendingConnectionUserInitiated != null) return
+            if (!hasLocalNetworkPermission() && (!localNetworkPermissionRequested || userInitiated)) {
+                pendingConnectionUserInitiated = userInitiated
+                localNetworkPermissionRequested = true
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.ACCESS_LOCAL_NETWORK),
+                    REQUEST_LOCAL_NETWORK_PERMISSION
+                )
                 return
             }
-
-            if (!userInitiated) {
-                meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
-                meshAgent?.Start()
-            } else {
-                if (g_autoConnect) {
-                    if (g_userDisconnect) {
-                        // We are not trying to connect, switch to connecting
-                        g_userDisconnect = false
-                        meshAgent =
-                            MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
-                        meshAgent?.Start()
-                    } else {
-                        // We are trying to connect, switch to not trying
-                        g_userDisconnect = true
-                    }
-                } else {
-                    // We are not in auto connect mode, try to connect
-                    g_userDisconnect = true
-                    meshAgent =
-                        MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
-                    meshAgent?.Start()
-                }
-            }
+            connectAgent(userInitiated)
         } else if (meshAgent != null) {
             // Stop the agent
             if (userInitiated) { g_userDisconnect = true }
@@ -546,6 +539,34 @@ class MainActivity : AppCompatActivity() {
             meshAgent = null
         }
         mainFragment?.refreshInfo()
+    }
+
+    private fun connectAgent(userInitiated: Boolean) {
+        requestAllPermissions()
+        if (!ensureAgentIdentity()) return
+
+        if (!userInitiated) {
+            meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+            meshAgent?.Start()
+        } else {
+            if (g_autoConnect) {
+                if (g_userDisconnect) {
+                    // We are not trying to connect, switch to connecting
+                    g_userDisconnect = false
+                    meshAgent =
+                        MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+                    meshAgent?.Start()
+                } else {
+                    // We are trying to connect, switch to not trying
+                    g_userDisconnect = true
+                }
+            } else {
+                // We are not in auto connect mode, try to connect
+                g_userDisconnect = true
+                meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+                meshAgent?.Start()
+            }
+        }
     }
 
     private fun ensureAgentIdentity(): Boolean {
@@ -750,6 +771,7 @@ class MainActivity : AppCompatActivity() {
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val AGENT_KEY_ALIAS = "meshcentral-agent-identity"
         const val REQUEST_ALL_PERMISSIONS = 1
+        const val REQUEST_LOCAL_NETWORK_PERMISSION = 2
         private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
         private const val CERTIFICATE_LIFETIME_MILLIS = 20L * 365L * ONE_DAY_MILLIS
     }
