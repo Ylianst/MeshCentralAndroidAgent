@@ -359,7 +359,7 @@ object AgentController : AgentHost {
     }
 
     fun denyUnattendedConsent() {
-        val tunnel = meshAgent?.tunnels?.getOrNull(0) ?: return
+        val tunnel = activeDesktopTunnel() ?: return
         val json = JSONObject()
         json.put("type", "console")
         json.put("msg", "denied")
@@ -397,6 +397,11 @@ object AgentController : AgentHost {
     fun hasActiveDesktopTunnel(): Boolean {
         val agent = meshAgent ?: return false
         return agent.tunnels.any { (it.state == 2) && (it.usage == 2) }
+    }
+
+    // The connected desktop tunnel, used to route consent responses to the viewer that opened it.
+    fun activeDesktopTunnel(): MeshTunnel? {
+        return meshAgent?.tunnels?.toList()?.firstOrNull { (it.state == 2) && (it.usage == 2) }
     }
 
     // Display names of the remote users with an active session (desktop or files), de-duplicated.
@@ -489,9 +494,9 @@ object AgentController : AgentHost {
 
     fun sendDesktopTunnelData(data: ByteString) {
         val agent = meshAgent ?: return
-        for (t in agent.tunnels) {
-            if ((t.state == 2) && (t.usage == 2) && (t._webSocket != null)) {
-                t._webSocket!!.send(data)
+        for (t in agent.tunnels.toList()) {
+            if ((t.state == 2) && (t.usage == 2)) {
+                t._webSocket?.send(data)
             }
         }
     }

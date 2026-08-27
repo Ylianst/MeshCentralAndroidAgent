@@ -1,0 +1,45 @@
+name: Android PR Build
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      # No signing secrets on pull requests (and none on fork PRs at all); the release build
+      # falls back to debug signing. assembleRelease still runs so R8 / resource shrinking break
+      # the check here rather than after merge.
+      - name: Build and test
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon testDebugUnitTest assembleDebug assembleRelease
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: meshcentral-agent-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

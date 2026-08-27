@@ -49,8 +49,8 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
         if ((remoteMessage.data["shash"] == null) || (serverLink == null) || (remoteMessage.data["shash"]!!.length < 12)) return;
 
         // Check the server's agent hash against the notification.
-        var x : List<String> = serverLink!!.split(',')
-        if (!x[1].startsWith(remoteMessage.data["shash"]!!)) return;
+        val agentHash = serverLink!!.split(',').getOrNull(1) ?: return
+        if (!agentHash.startsWith(remoteMessage.data["shash"]!!)) return;
 
         // Get the notification URL if one is present
         var url : String? = null
@@ -86,7 +86,8 @@ class MeshFirebaseMessagingService : FirebaseMessagingService() {
             var cmd : String? = remoteMessage.data["con"]
             var session : String? = remoteMessage.data["s"]
             var relayId : String? = remoteMessage.data["r"]
-            if ((cmd != null) && (session != null)) { processConsoleMessage(cmd, session, relayId, remoteMessage.from!!) }
+            val from = remoteMessage.from
+            if ((cmd != null) && (session != null) && (from != null)) { processConsoleMessage(cmd, session, relayId, from) }
         }
     }
 

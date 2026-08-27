@@ -190,60 +190,69 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     private fun captureFrame() {
         if (!active || capturing || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         capturing = true
-        takeScreenshot(Display.DEFAULT_DISPLAY, captureExecutor, object : AccessibilityService.TakeScreenshotCallback {
-            override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
-                // Recovered: allow the next error to be reported again.
-                screenshotErrorNotified = false
-                try {
-                    val wrapped = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
-                    if (wrapped != null) {
-                        val bitmap = wrapped.copy(Bitmap.Config.ARGB_8888, false)
-                        val dimensionsChanged = lastWidth != bitmap.width || lastHeight != bitmap.height
-                        lastWidth = bitmap.width
-                        lastHeight = bitmap.height
-                        if (dimensionsChanged) updateTunnelDisplaySize()
-                        val encodedBitmap = if (g_desktop_scalingLevel != 1024 && g_desktop_scalingLevel > 0) {
-                            Bitmap.createScaledBitmap(
-                                bitmap,
-                                max(1, (bitmap.width * g_desktop_scalingLevel) / 1024),
-                                max(1, (bitmap.height * g_desktop_scalingLevel) / 1024),
-                                false
-                            )
-                        } else {
-                            bitmap
-                        }
-                        val sentFrame = encoder.encode(encodedBitmap) { AgentController.sendDesktopTunnelData(it) }
-                        nextFrameDelayMs = if (sentFrame) {
-                            MIN_FRAME_DELAY_MS
-                        } else {
-                            min(nextFrameDelayMs * 2, MAX_IDLE_FRAME_DELAY_MS)
-                        }
-                        if (encodedBitmap !== bitmap) encodedBitmap.recycle()
-                        bitmap.recycle()
-                    }
-                } catch (ex: Exception) {
-                    if (!screenshotErrorNotified) {
-                        screenshotErrorNotified = true
-                        AgentController.sendDesktopMessage("Unable to capture unattended screenshot: ${ex.message}")
-                    }
-                } finally {
-                    screenshot.hardwareBuffer.close()
-                    capturing = false
-                    scheduleNextCapture()
-                }
-            }
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, captureExecutor, screenshotCallback)
+        } catch (ex: Exception) {
+            capturing = false
+            scheduleNextCapture()
+        }
+    }
 
-            override fun onFailure(errorCode: Int) {
-                capturing = false
-                // Throttled or transient error; back off quietly instead of flooding the console.
-                nextFrameDelayMs = min(nextFrameDelayMs * 2, MAX_IDLE_FRAME_DELAY_MS)
-                if (errorCode != AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT && !screenshotErrorNotified) {
-                    screenshotErrorNotified = true
-                    AgentController.sendDesktopMessage("Unable to capture unattended screenshot, error $errorCode.")
+    private val screenshotCallback = object : AccessibilityService.TakeScreenshotCallback {
+        override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+            // Recovered: allow the next error to be reported again.
+            screenshotErrorNotified = false
+            var bitmap: Bitmap? = null
+            var encodedBitmap: Bitmap? = null
+            try {
+                val wrapped = Bitmap.wrapHardwareBuffer(screenshot.hardwareBuffer, screenshot.colorSpace)
+                    ?: return
+                bitmap = wrapped.copy(Bitmap.Config.ARGB_8888, false)
+                wrapped.recycle()
+                val dimensionsChanged = lastWidth != bitmap.width || lastHeight != bitmap.height
+                lastWidth = bitmap.width
+                lastHeight = bitmap.height
+                if (dimensionsChanged) updateTunnelDisplaySize()
+                encodedBitmap = if (g_desktop_scalingLevel != 1024 && g_desktop_scalingLevel > 0) {
+                    Bitmap.createScaledBitmap(
+                        bitmap,
+                        max(1, (bitmap.width * g_desktop_scalingLevel) / 1024),
+                        max(1, (bitmap.height * g_desktop_scalingLevel) / 1024),
+                        false
+                    )
+                } else {
+                    bitmap
                 }
+                val sentFrame = encoder.encode(encodedBitmap) { AgentController.sendDesktopTunnelData(it) }
+                nextFrameDelayMs = if (sentFrame) {
+                    MIN_FRAME_DELAY_MS
+                } else {
+                    min(nextFrameDelayMs * 2, MAX_IDLE_FRAME_DELAY_MS)
+                }
+            } catch (ex: Throwable) {
+                if (!screenshotErrorNotified) {
+                    screenshotErrorNotified = true
+                    AgentController.sendDesktopMessage("Unable to capture unattended screenshot: ${ex.message}")
+                }
+            } finally {
+                if (encodedBitmap != null && encodedBitmap !== bitmap) encodedBitmap.recycle()
+                bitmap?.recycle()
+                screenshot.hardwareBuffer.close()
+                capturing = false
                 scheduleNextCapture()
             }
-        })
+        }
+
+        override fun onFailure(errorCode: Int) {
+            capturing = false
+            // Throttled or transient error; back off quietly instead of flooding the console.
+            nextFrameDelayMs = min(nextFrameDelayMs * 2, MAX_IDLE_FRAME_DELAY_MS)
+            if (errorCode != AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT && !screenshotErrorNotified) {
+                screenshotErrorNotified = true
+                AgentController.sendDesktopMessage("Unable to capture unattended screenshot, error $errorCode.")
+            }
+            scheduleNextCapture()
+        }
     }
 
     private fun scheduleNextCapture() {

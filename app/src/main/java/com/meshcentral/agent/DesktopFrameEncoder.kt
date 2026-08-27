@@ -14,6 +14,8 @@ class DesktopFrameEncoder {
     private var tilesCount: Int = 0
     private var oldcrcs: IntArray? = null
     private var newcrcs: IntArray? = null
+    // Reused per-tile pixel scratch, so a full-screen CRC pass doesn't allocate one array per tile.
+    private val tilePixels = IntArray(64 * 64)
     // Written from the tunnel/main thread, read on the capture thread.
     @Volatile private var forceFullFrame = true
 
@@ -113,9 +115,11 @@ class DesktopFrameEncoder {
                 var w = 64
                 if (((x * 64) + 64) > bitmap.width) w = bitmap.width - (x * 64)
                 val t = (y * tilesWide) + x
-                val pixels = IntArray(w * h)
-                bitmap.getPixels(pixels, 0, w, x * 64, y * 64, w, h)
-                for (pixel in pixels) newcrcs!![t] = adler32(pixel, newcrcs!![t])
+                val count = w * h
+                bitmap.getPixels(tilePixels, 0, w, x * 64, y * 64, w, h)
+                var crc = newcrcs!![t]
+                for (i in 0 until count) crc = adler32(tilePixels[i], crc)
+                newcrcs!![t] = crc
             }
         }
     }

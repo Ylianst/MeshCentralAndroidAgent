@@ -91,13 +91,13 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             ContextCompat.startForegroundService(this, ScreenCaptureService.getStartIntent(this, result.resultCode, result.data))
-            meshAgent?.tunnels?.getOrNull(0)?.sendCtrlResponse(JSONObject().apply {
+            AgentController.activeDesktopTunnel()?.sendCtrlResponse(JSONObject().apply {
                 put("type", "console")
                 put("msg", null)
                 put("msgid", 0)
             })
         } else {
-            meshAgent?.tunnels?.getOrNull(0)?.let { tunnel ->
+            AgentController.activeDesktopTunnel()?.let { tunnel ->
                 tunnel.sendCtrlResponse(JSONObject().apply {
                     put("type", "console")
                     put("msg", "denied")
@@ -371,6 +371,7 @@ class MainActivity : AppCompatActivity() {
             alert = null
         }
         this.runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
             val builder = AlertDialog.Builder(this)
             builder.setTitle(title)
             builder.setMessage(msg)
@@ -648,13 +649,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun sendDesktopConsentDenied() {
-        val tunnel = meshAgent?.tunnels?.getOrNull(0) ?: return
-        val json = JSONObject()
-        json.put("type", "console")
-        json.put("msg", "denied")
-        json.put("msgid", 2)
-        tunnel.sendCtrlResponse(json)
-        tunnel.Stop()
+        AgentController.denyUnattendedConsent()
     }
 
     fun stopProjection() {

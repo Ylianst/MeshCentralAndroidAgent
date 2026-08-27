@@ -149,6 +149,11 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 _webSocket = null
             } catch (ex: Exception) { }
         }
+        // Close any in-flight upload so we don't leak the descriptor or leave a partial file
+        if (fileUpload != null) {
+            try { fileUpload?.close() } catch (ex: Exception) { }
+            fileUpload = null
+        }
         // Clear the connection timer
         if (connectionTimer != null) {
             connectionTimer?.cancel()
@@ -195,13 +200,15 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 var type = json.optString("type")
                 if (type == "options") { tunnelOptions = json }
             } else {
-                var xusage = text.toInt()
+                val xusage = text.toIntOrNull() ?: run { println("Invalid usage $text"); stopSocket(); return }
                 if (((xusage < 1) || (xusage > 5)) && (xusage != 10)) {
                     println("Invalid usage $text"); stopSocket(); return
                 }
-                val serverExpectedUsage = if (serverData.has("usage")) serverData.getInt("usage") else null
-                if (!isTunnelUsageAllowed(serverExpectedUsage, xusage)) {
-                    println("Unexpected usage $text != $serverExpectedUsage");
+                val allowedUsages = serverData.optJSONObject("soptions")?.optJSONArray("usages")?.let { arr ->
+                    List(arr.length()) { arr.getInt(it) }
+                }
+                if (!isTunnelUsageAllowed(allowedUsages, xusage)) {
+                    println("Unexpected usage $text, allowed $allowedUsages");
                     stopSocket(); return
                 }
                 usage = xusage; // 2 = Desktop, 5 = Files, 10 = File transfer
@@ -216,30 +223,27 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     if (usage == 2) {
                         // If this is a remote desktop usage...
                         if (!g_autoConsent && !AgentController.isRemoteDesktopRunning()) {
-                            // asking for consent
-                            if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                                val json = JSONObject()
-                                val msg = if (!AgentController.isAccessibilityServiceEnabled() && g_mainActivity == null) {
-                                    "Open the Android app to approve screen capture, or enable Accessibility Remote Control for unattended desktop."
-                                } else {
-                                    "Waiting for user to grant access..."
-                                }
-                                json.put("type", "console")
-                                json.put("msg", msg)
-                                json.put("msgid", 1)
-                                meshAgent!!.tunnels[0].sendCtrlResponse(json)
+                            // Ask for consent over this desktop tunnel, so the response reaches the
+                            // viewer that opened it rather than whichever tunnel happens to be first.
+                            val json = JSONObject()
+                            val msg = if (!AgentController.isAccessibilityServiceEnabled() && g_mainActivity == null) {
+                                "Open the Android app to approve screen capture, or enable Accessibility Remote Control for unattended desktop."
+                            } else {
+                                "Waiting for user to grant access..."
                             }
+                            json.put("type", "console")
+                            json.put("msg", msg)
+                            json.put("msgid", 1)
+                            sendCtrlResponse(json)
                         }
                         if (!AgentController.isRemoteDesktopRunning()) {
                             parent.parent.startProjection()
                         } else {
-                            if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                                val json = JSONObject()
-                                json.put("type", "console")
-                                json.put("msg", null)
-                                json.put("msgid", 0)
-                                meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                            }
+                            val json = JSONObject()
+                            json.put("type", "console")
+                            json.put("msg", null)
+                            json.put("msgid", 0)
+                            sendCtrlResponse(json)
                             // Send the display size and push a full frame of the current screen so the
                             // reconnecting viewer sees it immediately instead of waiting for a change.
                             updateDesktopDisplaySize()
@@ -381,7 +385,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 writeShort(mHeight) // Height
             }
         }
-        _webSocket!!.send(bytesOut.toByteArray().toByteString())
+        _webSocket?.send(bytesOut.toByteArray().toByteString())
     }
 
     // Cause some data to be sent over the websocket control channel every 2 minutes to keep it open
@@ -762,7 +766,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                                 if (len <= 0) { stopSocket(); break; } // Stream is done
                                 if (_webSocket == null) { stopSocket(); break; } // Web socket closed
                                 _webSocket?.send(buf.toByteString(0, len))
-                                if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
+                                if ((_webSocket?.queueSize() ?: 0) > 655350) { Thread.sleep(100)}
                             }
                         }
                     return;
@@ -809,7 +813,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                                 if (len <= 0) { stopSocket(); break; } // Stream is done
                                 if (_webSocket == null) { stopSocket(); break; } // Web socket closed
                                 _webSocket?.send(buf.toByteString(0, len))
-                                if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
+                                if ((_webSocket?.queueSize() ?: 0) > 655350) { Thread.sleep(100)}
                             }
                         }
                         return;

@@ -133,7 +133,10 @@ class ScreenCaptureService : Service(), RemoteDesktopProvider {
                         try {
                             // Clean up
                             if (mVirtualDisplay != null) mVirtualDisplay!!.release()
-                            if (mImageReader != null) mImageReader!!.setOnImageAvailableListener(null, null)
+                            if (mImageReader != null) {
+                                mImageReader!!.setOnImageAvailableListener(null, null)
+                                mImageReader!!.close()
+                            }
 
                             // Re-create virtual display depending on device width / height
                             createVirtualDisplay()
@@ -418,6 +421,7 @@ class ScreenCaptureService : Service(), RemoteDesktopProvider {
             mVirtualDisplay?.release()
             mVirtualDisplay = null
             mImageReader?.setOnImageAvailableListener(null, null)
+            mImageReader?.close()
             mImageReader = null
             if (mMediaProjection != null) createVirtualDisplay()
         } catch (e: Exception) {
