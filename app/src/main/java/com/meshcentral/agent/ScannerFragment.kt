@@ -2,8 +2,10 @@ package com.meshcentral.agent
 
 import android.app.AlertDialog
 import android.os.Bundle
+import android.util.Log
 import android.view.Gravity
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.Lifecycle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -13,12 +15,14 @@ import androidx.navigation.fragment.findNavController
 import com.budiyev.android.codescanner.CodeScanner
 import com.budiyev.android.codescanner.CodeScannerView
 import com.budiyev.android.codescanner.DecodeCallback
+import com.budiyev.android.codescanner.ErrorCallback
 import com.karumi.dexter.Dexter
 import com.karumi.dexter.PermissionToken
 import com.karumi.dexter.listener.PermissionDeniedResponse
 import com.karumi.dexter.listener.PermissionGrantedResponse
 import com.karumi.dexter.listener.PermissionRequest
 import com.karumi.dexter.listener.single.PermissionListener
+import com.google.zxing.BarcodeFormat
 import java.util.jar.Manifest
 
 /**
@@ -51,25 +55,31 @@ class ScannerFragment : Fragment(), PermissionListener {
         val activity = requireActivity()
         lastToast = Toast.makeText(activity, "", Toast.LENGTH_LONG)
         codeScanner = CodeScanner(activity, scannerView)
+        codeScanner.formats = listOf(BarcodeFormat.QR_CODE)
+        codeScanner.errorCallback = ErrorCallback {
+            Log.e(TAG, "Unable to initialize QR scanner camera", it)
+            activity.runOnUiThread { showCameraError() }
+        }
         codeScanner.decodeCallback = DecodeCallback {
             activity.runOnUiThread {
-                if (isMshStringValid(it.text)) {
+                if (isMeshServerLinkValid(it.text)) {
                     lastToast?.cancel()
                     confirmServerSetup(it.text)
                 } else {
                     lastToast?.setGravity(Gravity.CENTER, 0, 300)
                     lastToast?.setText(getString(R.string.invalid_qrcode))
                     lastToast?.show()
-                    codeScanner.startPreview()
+                    startScannerPreview()
                 }
             }
         }
         scannerView.setOnClickListener {
-            codeScanner.startPreview()
+            startScannerPreview()
         }
     }
 
     override fun onDestroy() {
+        if (scannerFragment === this) scannerFragment = null
         if (alert != null) {
             alert?.dismiss()
             alert = null
@@ -93,6 +103,39 @@ class ScannerFragment : Fragment(), PermissionListener {
         super.onPause()
     }
 
+    private fun startScannerPreview() {
+        try {
+            codeScanner.startPreview()
+        } catch (error: RuntimeException) {
+            showCameraError()
+        }
+    }
+
+    private fun showCameraError() {
+        if (!isAdded || view == null || alert != null || !lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+
+        val activity = activity as? MainActivity ?: return
+        val builder = AlertDialog.Builder(activity)
+        builder.setTitle(R.string.camera_unavailable)
+        builder.setMessage(R.string.camera_unavailable_message)
+        builder.setPositiveButton(R.string.retry) { _, _ ->
+            alert = null
+            startScannerPreview()
+        }
+        builder.setNeutralButton(R.string.manual_setup_server) { _, _ ->
+            alert = null
+            codeScanner.releaseResources()
+            visibleScreen = 1
+            findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
+            activity.window.decorView.post { activity.promptForServerLink() }
+        }
+        builder.setNegativeButton(android.R.string.cancel) { _, _ ->
+            alert = null
+        }
+        builder.setOnDismissListener { alert = null }
+        alert = builder.show()
+    }
+
     fun getServerHost(serverLink : String?) : String? {
         if (serverLink == null) return null
         var x : List<String> = serverLink.split(',')
@@ -114,14 +157,14 @@ class ScannerFragment : Fragment(), PermissionListener {
             findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
         }
         builder.setNeutralButton(android.R.string.cancel) { _, _ ->
-            codeScanner.startPreview()
+            startScannerPreview()
         }
         alert = builder.show()
     }
 
     override fun onPermissionGranted(p0: PermissionGrantedResponse?) {
         println("onPermissionGranted")
-        codeScanner.startPreview()
+        startScannerPreview()
     }
 
     override fun onPermissionRationaleShouldBeShown(p0: PermissionRequest?, p1: PermissionToken?) {
@@ -138,14 +181,7 @@ class ScannerFragment : Fragment(), PermissionListener {
         findNavController().navigate(R.id.action_SecondFragment_to_FirstFragment)
     }
 
-    fun isMshStringValid(x:String):Boolean {
-        if (x.startsWith("mc://") == false)  return false
-        var xs = x.split(',')
-        if (xs.count() < 3) return false
-        if (xs[0].length < 8) return false
-        if (xs[1].length < 3) return false
-        if (xs[2].length < 3) return false
-        if (xs[0].indexOf('.') == -1) return false
-        return true
+    companion object {
+        private const val TAG = "ScannerFragment"
     }
 }

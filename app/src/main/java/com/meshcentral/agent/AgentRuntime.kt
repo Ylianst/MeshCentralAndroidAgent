@@ -17,7 +17,11 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.security.keystore.KeyProtection
 import android.util.Base64
+import android.util.Log
 import android.view.Gravity
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
@@ -28,24 +32,18 @@ import com.google.firebase.messaging.FirebaseMessaging
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
-import org.spongycastle.asn1.x500.X500Name
-import org.spongycastle.cert.X509v3CertificateBuilder
-import org.spongycastle.cert.jcajce.JcaX509CertificateConverter
-import org.spongycastle.cert.jcajce.JcaX509v3CertificateBuilder
-import org.spongycastle.jce.provider.BouncyCastleProvider
-import org.spongycastle.operator.jcajce.JcaContentSignerBuilder
 import java.io.ByteArrayInputStream
 import java.math.BigInteger
 import java.security.KeyFactory
 import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.PrivateKey
 import java.security.SecureRandom
-import java.security.Security
 import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
-import java.util.Random
-import kotlin.math.absoluteValue
+import javax.security.auth.x500.X500Principal
 
 interface AgentHost {
     val contentResolver: ContentResolver
@@ -82,8 +80,13 @@ interface RemoteDesktopProvider {
 }
 
 object AgentController : AgentHost {
+    private const val TAG = "AgentController"
     private const val INITIAL_RETRY_DELAY_MS = 10_000L
     private const val MAX_RETRY_DELAY_MS = 300_000L
+    private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+    private const val AGENT_KEY_ALIAS = "meshcentral-agent-identity"
+    private const val ONE_DAY_MILLIS = 24L * 60L * 60L * 1000L
+    private const val CERTIFICATE_LIFETIME_MILLIS = 20L * 365L * ONE_DAY_MILLIS
     private lateinit var appContext: Context
     private val mainHandler = Handler(Looper.getMainLooper())
     private var initialized = false
@@ -108,7 +111,6 @@ object AgentController : AgentHost {
     override fun getApplicationContext(): Context = appContext.applicationContext
 
     fun init(context: Context) {
-        ensureCryptoProvider()
         appContext = context.applicationContext
         loadServerLink()
         loadSettings()
@@ -214,7 +216,7 @@ object AgentController : AgentHost {
         loadServerLink()
         loadSettings()
         if ((meshAgent == null) && (serverLink != null)) {
-            ensureIdentity()
+            if (!ensureIdentity()) return
             if (!userInitiated) {
                 setUserDisconnected(false)
                 if (!retryAttemptInProgress) resetRetryBackoff()
@@ -749,51 +751,66 @@ object AgentController : AgentHost {
         }
     }
 
-    private fun ensureIdentity() {
-        if (agentCertificate != null && agentCertificateKey != null) return
-        val sharedPreferences = appContext.getSharedPreferences("meshagent", Context.MODE_PRIVATE)
-        val certb64: String? = sharedPreferences.getString("agentCert", null)
-        val keyb64: String? = sharedPreferences.getString("agentKey", null)
-        if ((certb64 == null) || (keyb64 == null)) {
-            val keyGen = KeyPairGenerator.getInstance("RSA")
-            keyGen.initialize(2048, SecureRandom())
-            val keypair = keyGen.generateKeyPair()
+    private fun ensureIdentity(): Boolean {
+        if ((agentCertificate != null) && (agentCertificateKey != null)) return true
 
-            var serial = BigInteger("12345678")
-            try {
-                serial = BigInteger.valueOf(Random().nextInt().toLong().absoluteValue)
-            } catch (_: Exception) {
+        val sharedPreferences = appContext.getSharedPreferences("meshagent", Context.MODE_PRIVATE)
+        return try {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (!keyStore.containsAlias(AGENT_KEY_ALIAS)) {
+                val certb64 = sharedPreferences.getString("agentCert", null)
+                val keyb64 = sharedPreferences.getString("agentKey", null)
+                if ((certb64 != null) && (keyb64 != null)) {
+                    val certificate = CertificateFactory.getInstance("X509").generateCertificate(
+                        ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
+                    ) as X509Certificate
+                    val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
+                    val privateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
+                    val protection = KeyProtection.Builder(KeyProperties.PURPOSE_SIGN)
+                        .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384)
+                        .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                        .build()
+                    keyStore.setEntry(
+                        AGENT_KEY_ALIAS,
+                        KeyStore.PrivateKeyEntry(privateKey, arrayOf(certificate)),
+                        protection
+                    )
+                } else {
+                    generateAgentIdentity()
+                }
             }
 
-            val builder: X509v3CertificateBuilder = JcaX509v3CertificateBuilder(
-                X500Name("CN=android.agent.meshcentral.com"),
-                serial,
-                Date(System.currentTimeMillis() - 86400000L * 365),
-                Date(253402300799000L),
-                X500Name("CN=android.agent.meshcentral.com"),
-                keypair.public
+            agentCertificate = keyStore.getCertificate(AGENT_KEY_ALIAS) as X509Certificate
+            agentCertificateKey = keyStore.getKey(AGENT_KEY_ALIAS, null) as PrivateKey
+            sharedPreferences.edit().remove("agentCert").remove("agentKey").apply()
+            true
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to load or create agent identity", error)
+            agentCertificate = null
+            agentCertificateKey = null
+            showAlertMessage(
+                appContext.getString(R.string.agent_identity_error_title),
+                appContext.getString(R.string.agent_identity_error_message)
             )
-            agentCertificate = JcaX509CertificateConverter().setProvider("SC").getCertificate(
-                builder.build(JcaContentSignerBuilder("SHA256withRSA").build(keypair.private))
-            )
-            agentCertificateKey = keypair.private
-            sharedPreferences.edit()
-                .putString("agentCert", Base64.encodeToString(agentCertificate?.encoded, Base64.DEFAULT))
-                .putString("agentKey", Base64.encodeToString(agentCertificateKey?.encoded, Base64.DEFAULT))
-                .apply()
-        } else {
-            agentCertificate = CertificateFactory.getInstance("X509").generateCertificate(
-                ByteArrayInputStream(Base64.decode(certb64, Base64.DEFAULT))
-            ) as X509Certificate
-            val keySpec = PKCS8EncodedKeySpec(Base64.decode(keyb64, Base64.DEFAULT))
-            agentCertificateKey = KeyFactory.getInstance("RSA").generatePrivate(keySpec)
+            false
         }
     }
 
-    private fun ensureCryptoProvider() {
-        if (Security.getProvider(BouncyCastleProvider.PROVIDER_NAME) == null) {
-            Security.insertProviderAt(BouncyCastleProvider(), 1)
-        }
+    private fun generateAgentIdentity() {
+        val keyGen = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, ANDROID_KEYSTORE)
+        val now = System.currentTimeMillis()
+        keyGen.initialize(
+            KeyGenParameterSpec.Builder(AGENT_KEY_ALIAS, KeyProperties.PURPOSE_SIGN)
+                .setKeySize(2048)
+                .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384)
+                .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
+                .setCertificateSubject(X500Principal("CN=android.agent.meshcentral.com"))
+                .setCertificateSerialNumber(BigInteger(63, SecureRandom()).max(BigInteger.ONE))
+                .setCertificateNotBefore(Date(now - ONE_DAY_MILLIS))
+                .setCertificateNotAfter(Date(now + CERTIFICATE_LIFETIME_MILLIS))
+                .build()
+        )
+        keyGen.generateKeyPair()
     }
 
     fun getServerHost(): String? {

@@ -27,10 +27,11 @@
         android:layout_width="279dp"
         android:layout_height="249dp"
         android:layout_marginStart="32dp"
+        android:layout_marginTop="82dp"
         android:contentDescription="@string/authenticating"
         android:src="@mipmap/ic_launcher_foreground"
         app:layout_constraintStart_toStartOf="parent"
-        tools:layout_editor_absoluteY="82dp" />
+        app:layout_constraintTop_toTopOf="parent" />
 
     <Button
         android:id="@+id/authAcceptButton"

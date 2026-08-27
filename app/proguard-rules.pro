@@ -21,6 +21,6 @@
 #-renamesourcefileattribute SourceFile
 
 
--keep class org.spongycastle.**
--dontwarn org.spongycastle.jce.provider.X509LDAPCertStoreSpi
--dontwarn org.spongycastle.x509.util.LDAPStoreHelper
+-keep class org.bouncycastle.**
+-dontwarn org.bouncycastle.jce.provider.X509LDAPCertStoreSpi
+-dontwarn org.bouncycastle.x509.util.LDAPStoreHelper

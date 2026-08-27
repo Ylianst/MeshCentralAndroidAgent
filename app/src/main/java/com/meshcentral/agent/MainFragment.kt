@@ -1,28 +1,25 @@
 package com.meshcentral.agent
 
-import android.Manifest
 import android.R.attr.*
+import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
-import com.karumi.dexter.Dexter
-import com.karumi.dexter.MultiplePermissionsReport
-import com.karumi.dexter.PermissionToken
-import com.karumi.dexter.listener.PermissionRequest
-import com.karumi.dexter.listener.multi.MultiplePermissionsListener
 
 
 /**
  * A simple [Fragment] subclass as the default destination in the navigation.
  */
-class MainFragment : Fragment(), MultiplePermissionsListener {
+class MainFragment : Fragment() {
     var alert : AlertDialog? = null
 
     override fun onCreateView(
@@ -53,15 +50,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 if ((activity as MainActivity).isAgentDisconnected() == false) {
                     (activity as MainActivity).toggleAgentConnection(true)
                 } else {
-                    // Perform action on the agent
-                    Dexter.withContext(context)
-                        .withPermissions(
-                                //Manifest.permission.CAMERA,
-                                Manifest.permission.READ_EXTERNAL_STORAGE,
-                                Manifest.permission.WRITE_EXTERNAL_STORAGE
-                        )
-                        .withListener(this)
-                        .check()
+                    (activity as MainActivity).toggleAgentConnection(false)
                 }
             }
         }
@@ -71,22 +60,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             var data: Uri? = (activity as MainActivity).intent.data;
             if (data != null && data.isHierarchical()) {
                 var uri: String? = (activity as MainActivity).intent.dataString;
-                if ((uri != null) && (isMshStringValid(uri))) {
+                if ((uri != null) && isMeshServerLinkValid(uri)) {
                     confirmServerSetup(uri)
                 }
             }
         }
-    }
-
-    fun isMshStringValid(x: String):Boolean {
-        if (x.startsWith("mc://") == false)  return false
-        var xs = x.split(',')
-        if (xs.count() < 3) return false
-        if (xs[0].length < 8) return false
-        if (xs[1].length < 3) return false
-        if (xs[2].length < 3) return false
-        if (xs[0].indexOf('.') == -1) return false
-        return true
     }
 
     fun moveToScanner() {
@@ -94,6 +72,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment) }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun moveToWebPage(pageUrl: String) {
         println("moveToWebPage $visibleScreen")
         if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_webViewFragment) }
@@ -114,6 +93,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         return "";
     }
 
+    @SuppressLint("CutPasteId")
     fun refreshInfo() {
         var showServerTitle : String? = null
         var showServerLogo : Int = 0 // 0 = Default, 1 = User, 2 = Users, 3 = Custom
@@ -219,10 +199,14 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                 if (serverImage != null) {
                     // Display user account image
                     val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
-                    imageView?.setImageBitmap(serverImage)
-                    val param = imageView?.layoutParams as ViewGroup.MarginLayoutParams
-                    param.setMargins(128, 128, 128, 128)
-                    imageView.layoutParams = param
+                    if (imageView != null) {
+                        imageView.setImageBitmap(serverImage)
+                        val param = imageView.layoutParams as? ViewGroup.MarginLayoutParams
+                        if (param != null) {
+                            param.setMargins(128, 128, 128, 128)
+                            imageView.layoutParams = param
+                        }
+                    }
                     showServerLogo = 3
                 } else {
                     if (userSessions.size == 0) {
@@ -231,13 +215,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
                             val imageView = view?.findViewById<ImageView>(R.id.mainImageView)
                             if (imageView != null) {
                                 imageView.setImageBitmap(meshAgent?.serverImage)
-                                try {
-                                    val param = imageView.layoutParams as ViewGroup.MarginLayoutParams?
-                                    if (param != null) {
-                                        param.setMargins(128, 128, 128, 128)
-                                        imageView.layoutParams = param
-                                    }
-                                } catch (ex: Exception) {}
+                                val param = imageView.layoutParams as? ViewGroup.MarginLayoutParams
+                                if (param != null) {
+                                    param.setMargins(128, 128, 128, 128)
+                                    imageView.layoutParams = param
+                                }
                             }
                             showServerLogo = 3
                         }
@@ -275,11 +257,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             var imageView : ImageView? = null
             try { imageView = view?.findViewById<ImageView>(R.id.mainImageView) } catch (ex: Exception) {}
             if (imageView != null) {
-                imageView?.setImageResource(R.mipmap.ic_launcher_foreground)
-                val param = imageView?.layoutParams
+                setImageResourceSafely(imageView, R.mipmap.ic_launcher_foreground)
+                val param = imageView.layoutParams
                 if (param is ViewGroup.MarginLayoutParams) {
-                    (param as ViewGroup.MarginLayoutParams).setMargins(0, 0, 0, 0)
-                    imageView?.layoutParams = param
+                    param.setMargins(0, 0, 0, 0)
+                    imageView.layoutParams = param
                 }
             }
         }
@@ -288,11 +270,11 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
             var imageView : ImageView? = null
             try { imageView = view?.findViewById<ImageView>(R.id.mainImageView) } catch (ex: Exception) {}
             if (imageView != null) {
-                imageView?.setImageResource(R.mipmap.ic_user)
-                val param = imageView?.layoutParams
+                setImageResourceSafely(imageView, R.mipmap.ic_user_foreground)
+                val param = imageView.layoutParams
                 if (param is ViewGroup.MarginLayoutParams) {
-                    (param as ViewGroup.MarginLayoutParams).setMargins(128, 128, 128, 128)
-                    imageView?.layoutParams = param
+                    param.setMargins(128, 128, 128, 128)
+                    imageView.layoutParams = param
                 }
             }
         }
@@ -310,6 +292,20 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         */
     }
 
+    private fun setImageResourceSafely(imageView: ImageView, resourceId: Int) {
+        try {
+            imageView.setImageResource(resourceId)
+        } catch (error: Resources.NotFoundException) {
+            Log.w(TAG, "Unable to load image resource $resourceId", error)
+            try {
+                imageView.setImageResource(R.mipmap.ic_launcher_foreground)
+            } catch (fallbackError: Resources.NotFoundException) {
+                Log.e(TAG, "Unable to load fallback image resource", fallbackError)
+                imageView.setImageDrawable(null)
+            }
+        }
+    }
+
     fun getServerHost(serverLink: String?) : String? {
         if (serverLink == null) return null
         var x : List<String> = serverLink.split(',')
@@ -320,14 +316,8 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
         return serverHost
     }
 
-    override fun onPermissionsChecked(report: MultiplePermissionsReport?) {
-        println("onPermissionsChecked")
-        (activity as MainActivity).toggleAgentConnection(false)
-    }
-
-    override fun onPermissionRationaleShouldBeShown(permissions: MutableList<PermissionRequest>?, token: PermissionToken?) {
-        println("onPermissionRationaleShouldBeShown")
-        token?.continuePermissionRequest()
+    companion object {
+        private const val TAG = "MainFragment"
     }
 
     fun confirmServerSetup(x: String) {
@@ -349,6 +339,7 @@ class MainFragment : Fragment(), MultiplePermissionsListener {
     }
 
     override fun onDestroy() {
+        if (mainFragment === this) mainFragment = null
         if (alert != null) {
             alert?.dismiss()
             alert = null

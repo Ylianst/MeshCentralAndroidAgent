@@ -1,5 +1,6 @@
 package com.meshcentral.agent
 
+import android.annotation.SuppressLint
 import android.net.http.SslError
 import android.os.Bundle
 import androidx.fragment.app.Fragment
@@ -30,6 +31,7 @@ class WebViewFragment : Fragment() {
         return inflater.inflate(R.layout.webview_fragment, container, false)
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         webFragment = this
@@ -37,6 +39,7 @@ class WebViewFragment : Fragment() {
         browser = view.findViewById(R.id.mainWebView) as WebView
         browser?.settings?.javaScriptEnabled = true
         browser?.webViewClient = object : WebViewClient(){
+            @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 url: String?
@@ -81,5 +84,14 @@ class WebViewFragment : Fragment() {
         browser?.loadUrl("")
         pageUrl = null
         findNavController().navigate(R.id.action_webViewFragment_to_FirstFragment)
+    }
+
+    override fun onDestroyView() {
+        browser?.stopLoading()
+        browser?.webViewClient = WebViewClient()
+        browser?.destroy()
+        browser = null
+        if (webFragment === this) webFragment = null
+        super.onDestroyView()
     }
 }

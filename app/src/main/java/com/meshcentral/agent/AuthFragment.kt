@@ -1,5 +1,6 @@
 package com.meshcentral.agent
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.os.CountDownTimer
 import android.util.Base64
@@ -30,6 +31,7 @@ class AuthFragment : Fragment() {
         return inflater.inflate(R.layout.fragment_auth, container, false)
     }
 
+    @SuppressLint("SetTextI18n")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         println("onViewCreated-auth");
         super.onViewCreated(view, savedInstanceState)
@@ -37,7 +39,7 @@ class AuthFragment : Fragment() {
         visibleScreen = 4;
 
         // Set authentication code
-        var t:TextView = view.findViewById<Button>(R.id.authTopText2) as TextView
+        val t = view.findViewById<TextView>(R.id.authTopText2)
         t.text = "000000"
         if (g_auth_url != null) {
             var authCode: String? = g_auth_url?.getQueryParameter("code")
@@ -47,12 +49,12 @@ class AuthFragment : Fragment() {
         }
 
         // Set authentication progress bar
-        var p:ProgressBar = view.findViewById<Button>(R.id.authProgressBar) as ProgressBar
+        val p = view.findViewById<ProgressBar>(R.id.authProgressBar)
         p.progress = 100
         countDownTimer = object : CountDownTimer(60000, 600) {
             override fun onTick(millisUntilFinished: Long) {
-                var p:ProgressBar = view.findViewById<Button>(R.id.authProgressBar) as ProgressBar
-                if (p.progress > 0) { p.progress = p.progress - 1 }
+                val progressBar = view.findViewById<ProgressBar>(R.id.authProgressBar)
+                if (progressBar.progress > 0) { progressBar.progress = progressBar.progress - 1 }
             }
             override fun onFinish() {
                 countDownTimer = null
@@ -81,5 +83,12 @@ class AuthFragment : Fragment() {
         try {
             findNavController().navigate(R.id.action_authFragment_to_FirstFragment)
         } catch (ex: Exception) {}
+    }
+
+    override fun onDestroyView() {
+        countDownTimer?.cancel()
+        countDownTimer = null
+        if (authFragment === this) authFragment = null
+        super.onDestroyView()
     }
 }

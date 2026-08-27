@@ -1,8 +1,6 @@
 <resources>
     <string name="app_name" translatable="false">MeshCentral Agent</string>
-    <string name="action_settings">Settings</string>
     <!-- Strings used for fragments for navigation -->
-    <string name="first_fragment_label">First Fragment</string>
     <string name="second_fragment_label">Second Fragment</string>
     <string name="setup_server">Setup Server</string>
     <string name="manual_setup_server">Manual Server Setup</string>
@@ -11,12 +9,12 @@
     <string name="clear_server">Clear Server</string>
     <string name="no_server_setup">No Server Setup</string>
     <string name="invalid_qrcode">Invalid QR code</string>
-    <string name="next">Next</string>
+    <string name="camera_unavailable">Camera unavailable</string>
+    <string name="camera_unavailable_message">Unable to open the camera. Close other apps using it and try again, or enter the server pairing link manually.</string>
+    <string name="retry">Retry</string>
+    <string name="agent_identity_error_title">Secure connection unavailable</string>
+    <string name="agent_identity_error_message">Unable to create the secure device identity. Please try connecting again. If the problem continues, restart the app.</string>
     <string name="previous">Previous</string>
-    <string name="ok">OK</string>
-    <string name="test1">Test1</string>
-    <string name="test2">Test2</string>
-    <string name="cancel">Cancel</string>
     <string name="disconnected">Disconnected</string>
     <string name="connecting">Connecting</string>
     <string name="connected">Connected</string>
@@ -32,26 +30,7 @@
     <string name="authCode">------</string>
     <string name="settings">Settings</string>
 
-    <string name="hello_first_fragment">Hello first fragment</string>
-    <string name="hello_second_fragment">Hello second fragment. Arg: %1$s</string>
     <string name="loginVerification">Login Verification</string>
-    <string name="title_activity_settings">SettingsActivity</string>
-    <string name="tryingToConnect">Trying...</string>
-
-    <!-- Preference Titles -->
-    <string name="messages_header">Messages</string>
-    <string name="sync_header">Sync</string>
-
-    <!-- Messages Preferences -->
-    <string name="signature_title">Your signature</string>
-    <string name="reply_title">Default reply action</string>
-
-    <!-- Sync Preferences -->
-    <string name="sync_title">Sync email periodically</string>
-    <string name="attachment_title">Download incoming attachments</string>
-    <string name="attachment_summary_on">Automatically download attachments for incoming emails
-    </string>
-    <string name="attachment_summary_off">Only download attachments when manually requested</string>
     <string name="enablepushauthentication">Enable Push Authentication</string>
     <string name="automatic_connection">Automatic Connection</string>
     <string name="automatically_connect_to_server">Automatically connect to server</string>
@@ -101,5 +80,5 @@
     <string name="setup_message">Setup to: %1$s?</string>
     <string name="clear_server_setup">Clear server setup?</string>
     <string name="server_pairing_link">Server Pairing Link</string>
-    <string name="invalid_server_pairing_link">Invalid Server Pairing Linbk</string>
+    <string name="invalid_server_pairing_link">Invalid Server Pairing Link</string>
 </resources>

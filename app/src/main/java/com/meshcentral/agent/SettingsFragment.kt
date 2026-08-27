@@ -58,6 +58,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
     }
 
     override fun onDestroy() {
+        if (settingsFragment === this) settingsFragment = null
         g_mainActivity?.settingsChanged()
         super.onDestroy()
     }

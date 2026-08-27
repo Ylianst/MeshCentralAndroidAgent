@@ -1,5 +1,6 @@
 package com.meshcentral.agent
 
+import android.annotation.SuppressLint
 import android.app.RecoverableSecurityException
 import android.content.ContentResolver
 import android.content.ContentUris
@@ -42,6 +43,7 @@ class PendingActivityData(tunnel: MeshTunnel, id: Int, url: Uri, where: String, 
     var req : JSONObject = req
 }
 
+@SuppressLint("CustomX509TrustManager")
 class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSocketListener() {
     private var parent : MeshAgent = parent
     private var url:String = url
@@ -106,8 +108,8 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             }
 
             override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
-                var hash =
-                        MessageDigest.getInstance("SHA-384").digest(chain?.get(0)?.encoded).toHex()
+                val certificate = chain?.firstOrNull() ?: throw CertificateException("Server sent no TLS certificate")
+                val hash = MessageDigest.getInstance("SHA-384").digest(certificate.encoded).toHex()
                 if ((serverTlsCertHash != null) && (hash.equals(serverTlsCertHash?.toHex()))) return
                 if (hash.equals(parent.serverTlsCertHash?.toHex())) return
                 println("Got Bad Tunnel TlsHash: ${hash}")
@@ -197,8 +199,8 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 if (((xusage < 1) || (xusage > 5)) && (xusage != 10)) {
                     println("Invalid usage $text"); stopSocket(); return
                 }
-                var serverExpectedUsage = serverData.optInt("usage")
-                if ((serverExpectedUsage != null) && (serverExpectedUsage != xusage) && (serverExpectedUsage == null)) {
+                val serverExpectedUsage = if (serverData.has("usage")) serverData.getInt("usage") else null
+                if (!isTunnelUsageAllowed(serverExpectedUsage, xusage)) {
                     println("Unexpected usage $text != $serverExpectedUsage");
                     stopSocket(); return
                 }
@@ -264,6 +266,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         }
     }
 
+    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun onMessage(webSocket: WebSocket, msg: ByteString) {
         //println("Tunnel-onBinaryMessage: ${msg.size}, ${msg.toByteArray().toHex()}")
         if ((state != 2) || (msg.size < 2)) return;
@@ -387,7 +390,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             connectionTimer = object: CountDownTimer(120000000, 120000) {
                 override fun onTick(millisUntilFinished: Long) {
                     if (_webSocket != null) {
-                        _webSocket?.send(ByteArray(1).toByteString()) // If not, sent a single zero byte
+                        _webSocket?.send(ByteArray(1).toByteString()) // If not, send a single zero byte
                     }
                 }
                 override fun onFinish() { startConnectionTimer() }
@@ -442,6 +445,11 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 //val size = json.getInt("size")
                 val reqid = json.getInt("reqid")
 
+                if (!isSafeFileName(name)) {
+                    uploadError()
+                    return
+                }
+
                 // Close previous upload
                 if (fileUpload != null) {
                     fileUpload?.close()
@@ -454,8 +462,11 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 fileUploadSize = 0
 
                 if (path.startsWith("Sdcard")) {
-                    val fileDir: String = path.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
-                    val file = File(fileDir, name)
+                    val file = resolveSdcardChild(Environment.getExternalStorageDirectory(), path, name)
+                    if (file == null) {
+                        uploadError()
+                        return
+                    }
                     try {
                         fileUpload = FileOutputStream(file)
                     } catch (e: Exception) {
@@ -466,7 +477,6 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         val resolver: ContentResolver = parent.parent.contentResolver
                         val contentValues = ContentValues()
-                        var fileUri: Uri? = null
                         contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, name)
                         val (mimeType, relativePath, externalUri) = when {
                             name.lowercase().endsWith(".jpg") || name.lowercase().endsWith(".jpeg") -> Triple("image/jpg", Environment.DIRECTORY_PICTURES, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
@@ -483,7 +493,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         if (mimeType != null && relativePath != null && externalUri != null) {
                             contentValues.put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                             contentValues.put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
-                            fileUri = resolver.insert(externalUri, contentValues)
+                            val fileUri = resolver.insert(externalUri, contentValues)
                             try {
                                 fileUpload = resolver.openOutputStream(fileUri!!)
                             } catch (e: Exception) {
@@ -513,10 +523,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 }
 
                 // Send response
-                val json = JSONObject()
-                json.put("action", "uploadstart")
-                json.put("reqid", reqid)
-                if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+                val respJson = JSONObject()
+                respJson.put("action", "uploadstart")
+                respJson.put("reqid", reqid)
+                if (_webSocket != null) { _webSocket?.send(respJson.toString().toByteArray().toByteString()) }
             }
             "uploaddone" -> {
                 if (fileUpload == null) return;
@@ -524,10 +534,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 fileUpload = null;
 
                 // Send response
-                val json = JSONObject()
-                json.put("action", "uploaddone")
-                json.put("reqid", fileUploadReqId)
-                if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+                val respJson = JSONObject()
+                respJson.put("action", "uploaddone")
+                respJson.put("reqid", fileUploadReqId)
+                if (_webSocket != null) { _webSocket?.send(respJson.toString().toByteArray().toByteString()) }
 
                 // Event the server
                 var eventArgs = JSONArray()
@@ -557,11 +567,11 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         if (dir.equals("Audio")) { uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI }
         if (dir.equals("Videos")) { uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI }
         //if (dir == "Documents") { uri = MediaStore.Files. }
-        if (uri == null) { return r }
+        val mediaUri = uri ?: return r
         if (dir.startsWith("Sdcard")) {
-            val path = dir.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
-            val listOfFiles = File(path).listFiles()
-            for (file in listOfFiles) {
+            val directory = resolveSdcardPath(Environment.getExternalStorageDirectory(), dir) ?: return r
+            val listOfFiles = directory.listFiles()
+            for (file in listOfFiles.orEmpty()) {
                 var f : JSONObject = JSONObject()
                 f.put("n", file.name)
                 if (file.isDirectory) f.put("t", 2)
@@ -572,14 +582,13 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 r.put(f)
             }
         } else {
-        val cursor: Cursor? = parent.parent.contentResolver.query(
-                uri,
+        parent.parent.contentResolver.query(
+            mediaUri,
                 projection,
                 null,
                 null,
                 null
-        )
-        if (cursor != null) {
+        )?.use { cursor ->
             val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val dateModified: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
             val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
@@ -592,12 +601,13 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 f.put("d", cursor.getInt(dateModified))
                 r.put(f)
                 //println("${cursor.getString(titleColumn)}, ${cursor.getString(typeColumn)}")
-                }
             }
+        }
         }
         return r;
     }
 
+    @Suppress("DEPRECATION")
     fun deleteFile(path: String, filenames: JSONArray, req: JSONObject) {
         var fileArray:ArrayList<String> = ArrayList<String>()
         for (i in 0 until filenames.length()) { fileArray.add(filenames.getString(i)) }
@@ -613,15 +623,21 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         if (path.equals("Audio")) { uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI }
         if (path.equals("Videos")) { uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI }
         //if (filenameSplit[0] == "Documents") { uri = MediaStore.Files. }
-        if (uri == null) return
+        val mediaUri = uri ?: return
 
         if (path.startsWith("Sdcard")) {
-            var filePath = path.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
             try {
                 for (i in 0 until filenames.length())
                 {
-                    fileArray.add(filenames.getString(i))
-                    val file = File(filePath + "/" + filenames.getString(i))
+                    val file = resolveSdcardChild(
+                        Environment.getExternalStorageDirectory(),
+                        path,
+                        filenames.getString(i)
+                    )
+                    if (file == null) {
+                        fileDeleteResponse(req, false)
+                        continue
+                    }
                     if (file.exists()) {
                         if(file.delete()){
                             fileDeleteResponse(req, true) // Send success
@@ -636,62 +652,63 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 fileDeleteResponse(req, false) // Send failure
             }
         } else {
-            val cursor: Cursor? = parent.parent.contentResolver.query(
-                uri,
+            val matchingFiles = mutableMapOf<String, Pair<String, Uri>>()
+            parent.parent.contentResolver.query(
+                mediaUri,
                 projection,
                 null,
                 null,
                 null
-            )
-            if (cursor != null) {
+            )?.use { cursor ->
                 val idColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
-                //val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
-                var fileidArray:ArrayList<String> = ArrayList<String>()
-                var fileUriArray:ArrayList<Uri> = ArrayList<Uri>()
                 while (cursor.moveToNext()) {
-                    var name = cursor.getString(titleColumn)
+                    val name = cursor.getString(titleColumn)
                     if (fileArray.contains(name)) {
-                        var id = cursor.getString(idColumn)
-                        var contentUrl: Uri = ContentUris.withAppendedId(uri, cursor.getLong(idColumn))
-                        //var fileSize = cursor.getInt(sizeColumn)
-                        fileidArray.add(id)
-                        fileUriArray.add(contentUrl)
+                        val id = cursor.getString(idColumn)
+                        val contentUrl = ContentUris.withAppendedId(mediaUri, cursor.getLong(idColumn))
+                        matchingFiles[name] = Pair(id, contentUrl)
                     }
                 }
-                for (i in 0 until filenames.length()) {
-                    try {
-                            parent.parent.contentResolver.delete(fileUriArray[i],null,null)
-                        fileDeleteResponse(req, true) // Send success
-                    } catch (securityException: SecurityException) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            val recoverableSecurityException =
-                                securityException as? RecoverableSecurityException
-                                    ?: throw securityException
+            }
+            for (i in 0 until filenames.length()) {
+                val filename = filenames.getString(i)
+                val matchingFile = matchingFiles[filename]
+                if (matchingFile == null) {
+                    fileDeleteResponse(req, false)
+                    continue
+                }
+                try {
+                    parent.parent.contentResolver.delete(matchingFile.second,null,null)
+                    fileDeleteResponse(req, true) // Send success
+                } catch (securityException: SecurityException) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val recoverableSecurityException =
+                            securityException as? RecoverableSecurityException
+                                ?: throw securityException
 
-                            // Save the activity
-                            var activityCode = Random.nextInt() and 0xFFFF
-                            var pad = PendingActivityData(this, activityCode, fileUriArray[0], "${MediaStore.Images.Media._ID} = ?", fileidArray[0], req)
-                            pendingActivities.add(pad)
+                        // Save the activity
+                        val activityCode = Random.nextInt() and 0xFFFF
+                        val pad = PendingActivityData(this, activityCode, matchingFile.second, "${MediaStore.Images.Media._ID} = ?", matchingFile.first, req)
+                        pendingActivities.add(pad)
 
-                            // Launch the activity
-                            val intentSender = recoverableSecurityException.userAction.actionIntent.intentSender
-                            val launched = parent.parent.launchIntentSenderForResult(
-                                intentSender,
-                                activityCode,
-                                null,
-                                0,
-                                0,
-                                0,
-                                null
-                            )
-                            if (!launched) {
-                                pendingActivities.remove(pad)
-                                fileDeleteResponse(req, false)
-                            }
-                        } else {
-                            fileDeleteResponse(req, false) // Send fail
+                        // Launch the activity
+                        val intentSender = recoverableSecurityException.userAction.actionIntent.intentSender
+                        val launched = parent.parent.launchIntentSenderForResult(
+                            intentSender,
+                            activityCode,
+                            null,
+                            0,
+                            0,
+                            0,
+                            null
+                        )
+                        if (!launched) {
+                            pendingActivities.remove(pad)
+                            fileDeleteResponse(req, false)
                         }
+                    } else {
+                        fileDeleteResponse(req, false) // Send fail
                     }
                 }
             }
@@ -722,10 +739,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         if (filenameSplit[0].equals("Audio")) { uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI }
         if (filenameSplit[0].equals("Videos")) { uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI }
         //if (filenameSplit[0] == "Documents") { uri = MediaStore.Files. }
-        if (uri == null) { stopSocket(); return }
+        val mediaUri = uri ?: run { stopSocket(); return }
         if (filenameSplit[0].startsWith("Sdcard")){
-            val path = filename.replaceFirst("Sdcard", Environment.getExternalStorageDirectory().absolutePath)
-            val file = File(path)
+            val file = resolveSdcardPath(Environment.getExternalStorageDirectory(), filename)
+                ?: run { stopSocket(); return }
             if (file.exists()) {
                 val fileName = file.name
                 val fileSize = file.length()
@@ -756,21 +773,24 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 // file does not exist
             }
         } else {
-            val cursor: Cursor? = parent.parent.contentResolver.query(
-                    uri,
+            if (filenameSplit.size != 2 || !isSafeFileName(filenameSplit[1])) {
+                stopSocket()
+                return
+            }
+                parent.parent.contentResolver.query(
+                    mediaUri,
                     projection,
                     null,
                     null,
                     null
-            )
-            if (cursor != null) {
+                )?.use { cursor ->
                 val idColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                 val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
                 while (cursor.moveToNext()) {
                     var name = cursor.getString(titleColumn)
                     if (name == filenameSplit[1]) {
-                        var contentUrl: Uri = ContentUris.withAppendedId(uri, cursor.getLong(idColumn))
+                        var contentUrl: Uri = ContentUris.withAppendedId(mediaUri, cursor.getLong(idColumn))
                         var fileSize = cursor.getInt(sizeColumn)
 
                         // Event to the server
@@ -831,9 +851,9 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         }
 
         if (success && (lastDirRequest != null)) {
-            val path = lastDirRequest?.getString("path")
-            if ((path != null) && (path != "")) {
-                lastDirRequest?.put("dir", getFolder(path))
+            val dirPath = lastDirRequest?.getString("path")
+            if ((dirPath != null) && (dirPath != "")) {
+                lastDirRequest?.put("dir", getFolder(dirPath))
                 if (_webSocket != null) {_webSocket?.send(lastDirRequest?.toString()!!.toByteArray(Charsets.UTF_8).toByteString()) }
             }
         }

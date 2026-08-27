@@ -2,6 +2,7 @@ package com.meshcentral.agent
 
 //import com.google.firebase.iid.FirebaseInstanceId
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Notification
@@ -23,14 +24,13 @@ import android.view.Menu
 import android.view.MenuItem
 import android.widget.EditText
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import org.json.JSONObject
-import org.spongycastle.jce.provider.BouncyCastleProvider
 import java.security.PrivateKey
-import java.security.Security
 import java.security.cert.X509Certificate
 
 
@@ -44,6 +44,7 @@ val hardCodedServerLink : String? = null
 var g_mainActivity : MainActivity? = null
 var mainFragment : MainFragment? = null
 var scannerFragment : ScannerFragment? = null
+@SuppressLint("StaticFieldLeak")
 var webFragment : WebViewFragment? = null
 var authFragment : AuthFragment? = null
 var settingsFragment: SettingsFragment? = null
@@ -82,10 +83,29 @@ class MainActivity : AppCompatActivity() {
     lateinit var notificationChannel: NotificationChannel
     lateinit var notificationManager: NotificationManager
     lateinit var builder: Notification.Builder
+    private var pendingConnectionUserInitiated: Boolean? = null
+    private var localNetworkPermissionRequested = false
 
-    init {
-        Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
-        Security.insertProviderAt(BouncyCastleProvider(), 1)
+    private val screenCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            ContextCompat.startForegroundService(this, ScreenCaptureService.getStartIntent(this, result.resultCode, result.data))
+            meshAgent?.tunnels?.getOrNull(0)?.sendCtrlResponse(JSONObject().apply {
+                put("type", "console")
+                put("msg", null)
+                put("msgid", 0)
+            })
+        } else {
+            meshAgent?.tunnels?.getOrNull(0)?.let { tunnel ->
+                tunnel.sendCtrlResponse(JSONObject().apply {
+                    put("type", "console")
+                    put("msg", "denied")
+                    put("msgid", 2)
+                })
+                tunnel.Stop()
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -100,7 +120,7 @@ class MainActivity : AppCompatActivity() {
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // Check if this device has a camera
-        cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA)
+        cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
 
         //val fcmId = FirebaseInstallations.getInstance().id
         val fcmToken = FirebaseMessaging.getInstance().token
@@ -198,6 +218,7 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    @SuppressLint("InlinedApi")
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         // Handle action bar item clicks here. The action bar will
         // automatically handle clicks on the Home/Up button, so long
@@ -276,23 +297,6 @@ class MainActivity : AppCompatActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         println("onActivityResult, requestCode: $requestCode, resultCode: $resultCode, data: ${data.toString()}")
         super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == MainActivity.Companion.REQUEST_CODE) {
-            if (resultCode == RESULT_OK) {
-                ContextCompat.startForegroundService(this, com.meshcentral.agent.ScreenCaptureService.getStartIntent(this, resultCode, data))
-                if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                    val json = JSONObject()
-                    json.put("type", "console")
-                    json.put("msg", null)
-                    json.put("msgid", 0)
-                    meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                }
-                return
-            } else {
-                sendDesktopConsentDenied()
-                return
-            }
-        }
 
         var pad : PendingActivityData? = null
         for (b in pendingActivities) { if (b.id == requestCode) { pad = b } }
@@ -398,14 +402,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Check and add external storage permissions if necessary
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
                 permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             }
+        }
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
                 permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_DENIED) {
                 permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
             }
@@ -471,16 +478,39 @@ class MainActivity : AppCompatActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_ALL_PERMISSIONS) {
-            permissions.forEachIndexed { index, _ ->
-                if (grantResults[index] == PackageManager.PERMISSION_DENIED) {
-                }
+        if (requestCode == REQUEST_LOCAL_NETWORK_PERMISSION) {
+            val pendingConnection = pendingConnectionUserInitiated
+            pendingConnectionUserInitiated = null
+            if (pendingConnection != null && meshAgent == null && serverLink != null) {
+                AgentForegroundService.start(this)
+                AgentController.toggleAgentConnection(pendingConnection)
+                mainFragment?.refreshInfo()
             }
         }
     }
 
+    private fun hasLocalNetworkPermission(): Boolean {
+        return Build.VERSION.SDK_INT < 37 || ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_LOCAL_NETWORK
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     fun toggleAgentConnection(userInitiated : Boolean) {
         requestAllPermissions()
+        if ((meshAgent == null) && (serverLink != null)) {
+            if (!hasLocalNetworkPermission() && pendingConnectionUserInitiated != null) return
+            if (!hasLocalNetworkPermission() && (!localNetworkPermissionRequested || userInitiated)) {
+                pendingConnectionUserInitiated = userInitiated
+                localNetworkPermissionRequested = true
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.ACCESS_LOCAL_NETWORK),
+                    REQUEST_LOCAL_NETWORK_PERMISSION
+                )
+                return
+            }
+        }
         AgentForegroundService.start(this)
         AgentController.toggleAgentConnection(userInitiated)
     }
@@ -528,17 +558,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun isMshStringValid(x: String):Boolean {
-        if (x.startsWith("mc://") == false)  return false
-        var xs = x.split(',')
-        if (xs.count() < 3) return false
-        if (xs[0].length < 8) return false
-        if (xs[1].length < 3) return false
-        if (xs[2].length < 3) return false
-        if (xs[0].indexOf('.') == -1) return false
-        return true
-    }
-
     // Show alert asking for server pairing link
     fun promptForServerLink() {
         if (hardCodedServerLink != null) return
@@ -554,7 +573,7 @@ class MainActivity : AppCompatActivity() {
         builder.setPositiveButton(android.R.string.ok) { _, _ ->
             var link = input.text.toString()
             println("LINK: $link")
-            if (isMshStringValid(link)) {
+            if (isMeshServerLinkValid(link)) {
                 setMeshServerLink(link)
             } else {
                 indicateInvalidLink()
@@ -581,7 +600,7 @@ class MainActivity : AppCompatActivity() {
     fun startMediaProjectionPrompt() {
         if (AgentController.isRemoteDesktopRunning() || (meshAgent == null) || (meshAgent!!.state != 3)) return
         val mProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        startActivityForResult(mProjectionManager.createScreenCaptureIntent(), MainActivity.Companion.REQUEST_CODE)
+        screenCaptureLauncher.launch(mProjectionManager.createScreenCaptureIntent())
     }
 
     fun promptScreenShareChoice() {
@@ -647,7 +666,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
-        private const val REQUEST_CODE = 100
         const val REQUEST_ALL_PERMISSIONS = 1
+        const val REQUEST_LOCAL_NETWORK_PERMISSION = 2
     }
 }
