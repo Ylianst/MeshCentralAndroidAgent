@@ -754,6 +754,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 eventArgs.put(fileName)
                 eventArgs.put(fileSize)
                 parent.logServerEventEx(106, eventArgs, "Download: ${fileName}, Size: $fileSize", serverData);
+                val okJson = JSONObject()
+                okJson.put("op", "ok")
+                okJson.put("size", fileSize)
+                _webSocket?.send(okJson.toString())
                 val contentUrl = Uri.fromFile(file)
                 try {
                     // Serve the file
@@ -771,7 +775,6 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         }
                     return;
                 } catch (e: FileNotFoundException) {
-                    // file not found
                 }
             } else {
                 // file does not exist
@@ -802,6 +805,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                         eventArgs.put(filename)
                         eventArgs.put(fileSize)
                         parent.logServerEventEx(106, eventArgs, "Download: ${filename}, Size: $fileSize", serverData);
+                        val okJson = JSONObject()
+                        okJson.put("op", "ok")
+                        okJson.put("size", fileSize)
+                        _webSocket?.send(okJson.toString())
 
                         // Serve the file
                         parent.parent.contentResolver.openInputStream(contentUrl).use { stream ->
@@ -810,8 +817,14 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                             var len : Int
                             while (true) {
                                 len = stream!!.read(buf, 0, 65535)
-                                if (len <= 0) { stopSocket(); break; } // Stream is done
-                                if (_webSocket == null) { stopSocket(); break; } // Web socket closed
+                                if (len <= 0) {
+                                    stopSocket()
+                                    break
+                                } // Stream is done
+                                if (_webSocket == null) {
+                                    stopSocket()
+                                    break
+                                } // Web socket closed
                                 _webSocket?.send(buf.toByteString(0, len))
                                 if ((_webSocket?.queueSize() ?: 0) > 655350) { Thread.sleep(100)}
                             }
