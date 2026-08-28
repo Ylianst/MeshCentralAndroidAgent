@@ -179,11 +179,11 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
-        println("Tunnel-onOpen")
+        //println("Tunnel-onOpen")
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-        println("Tunnel-onMessage: $text")
+        //println("Tunnel-onMessage: $text")
         if (state == 0) {
             if ((text == "c") || (text == "cr")) { state = 1; }
             return
@@ -724,16 +724,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         if (filenameSplit[0].equals("Audio")) { uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI }
         if (filenameSplit[0].equals("Videos")) { uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI }
         //if (filenameSplit[0] == "Documents") { uri = MediaStore.Files. }
-        val mediaUri = uri ?: run {
-            stopSocket()
-            return
-        }
+        val mediaUri = uri ?: run { stopSocket(); return }
         if (filenameSplit[0].startsWith("Sdcard")){
             val file = resolveSdcardPath(Environment.getExternalStorageDirectory(), filename)
-                ?: run {
-                    stopSocket()
-                    return
-                }
+                ?: run { stopSocket(); return }
             if (file.exists()) {
                 val fileName = file.name
                 val fileSize = file.length()
@@ -754,25 +748,17 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                             var len : Int
                             while (true) {
                                 len = stream!!.read(buf, 0, 65535)
-                                if (len <= 0) {
-                                    stopSocket()
-                                    break
-                                } // Stream is done
-                                if (_webSocket == null) {
-                                    stopSocket()
-                                    break
-                                } // Web socket closed
+                                if (len <= 0) { stopSocket(); break; } // Stream is done
+                                if (_webSocket == null) { stopSocket(); break; } // Web socket closed
                                 _webSocket?.send(buf.toByteString(0, len))
-                                if (_webSocket?.queueSize()!! > 655350) {
-                                    Thread.sleep(100)
-                                }
+                                if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
                             }
                         }
                     return;
                 } catch (e: FileNotFoundException) {
-                } catch (e: Exception) {
                 }
             } else {
+                // file does not exist
             }
         } else {
             if (filenameSplit.size != 2 || !isSafeFileName(filenameSplit[1])) {
