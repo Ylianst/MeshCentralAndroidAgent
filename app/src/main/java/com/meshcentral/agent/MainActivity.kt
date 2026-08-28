@@ -155,7 +155,9 @@ class MainActivity : AppCompatActivity() {
         intentFilter.addAction(Intent.ACTION_BATTERY_CHANGED)
         registerReceiver(batteryInfoReceiver, intentFilter)
 
-        //check if we can manage external storage
+
+        /*
+        check if we can manage external storage - cannot go on google play and needs a minimum of sdk 30
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             !Environment.isExternalStorageManager()
         ) {
@@ -165,6 +167,7 @@ class MainActivity : AppCompatActivity() {
             )
             startActivity(intent)
         }
+        */
 
         // Check if this device has a camera
         cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
