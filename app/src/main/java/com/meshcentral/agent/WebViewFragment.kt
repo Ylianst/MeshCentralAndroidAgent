@@ -38,15 +38,17 @@ class WebViewFragment : Fragment() {
         visibleScreen = 3;
         browser = view.findViewById(R.id.mainWebView) as WebView
         browser?.settings?.javaScriptEnabled = true
+        browser?.settings?.allowFileAccess = false
+        browser?.settings?.allowContentAccess = false
         browser?.webViewClient = object : WebViewClient(){
             @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 url: String?
             ): Boolean {
-                //println("shouldOverrideUrlLoading: $url")
-                pageUrl = url;
-                view?.loadUrl(url!!)
+                if (url == null) return false
+                pageUrl = url
+                view?.loadUrl(url)
                 return true
             }
 
@@ -73,7 +75,7 @@ class WebViewFragment : Fragment() {
             }
             */
         }
-        browser?.loadUrl(pageUrl!!)
+        pageUrl?.let { browser?.loadUrl(it) }
     }
 
     fun navigate(url: String) {

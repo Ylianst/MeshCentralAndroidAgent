@@ -6,9 +6,10 @@ non-root Android application.
 
 ## Summary
 
-Remote desktop is currently **screen sharing only**. A MeshCentral operator can
-see the device display, but cannot tap, swipe, type, press navigation buttons,
-lock input, or otherwise control the device.
+Remote desktop is **screen sharing only** through the MediaProjection path: a
+MeshCentral operator sees the device display but cannot control it. Enabling the
+bundled accessibility service adds tap, swipe, scroll, and key input for
+unattended control, within the limits described under Non-Root Limitations.
 
 The agent uses Android's public
 [MediaProjection API](https://developer.android.com/media/grow/media-projection)
@@ -106,24 +107,21 @@ restarts.
 
 ## Non-Root Limitations
 
-### No remote input
+### Remote input requires the accessibility service
 
-Android does not let an ordinary application inject arbitrary touch or keyboard
-events into other applications. The MeshCentral protocol messages for legacy
-keys, mouse input, Unicode keys, pause, refresh, and input lock are recognized
-by `MeshTunnel`, but their handlers intentionally do nothing.
+Android does not let an ordinary application inject touch or keyboard events into
+other applications. On the plain MediaProjection screen share the MeshCentral
+mouse, touch, and key messages are recognized by `MeshTunnel` but do nothing, so
+that path is view-only.
 
-The app does not declare an `AccessibilityService`, is not a system-signed app,
-and does not use a rooted input-injection mechanism. As a result, the remote
-desktop is view-only.
-
-An accessibility service could implement a limited set of gestures and global
-actions after the device user explicitly enables it in Android settings. That
-would still not be equivalent to root-level input: support varies by Android
-version and device vendor, some screens reject accessibility actions, text and
-key handling are incomplete, and Android displays persistent privacy indicators
-and warnings. Accessibility must not be enabled or treated as a way to bypass
-user consent.
+When the device user explicitly enables the bundled `MeshAccessibilityService`
+in Android settings, those messages are injected as tap, long-press, swipe, and
+scroll gestures and key events, giving unattended control. This is not equivalent
+to root-level input: support varies by Android version and device vendor, some
+screens reject accessibility gestures, text and key handling are incomplete,
+`FLAG_SECURE` windows still capture blank, and Android shows persistent privacy
+indicators. The service is opt-in and must not be treated as a way to bypass user
+consent.
 
 ### Protected content may be blank
 
@@ -177,7 +175,7 @@ inspection and support rather than smooth video playback.
 | Multiple viewers | Supported; frames are broadcast to active desktop tunnels | Device and network load |
 | Rotation | Supported by recreating the virtual display | Brief update interruption |
 | Quality and scaling | Supported | Server settings and device cost |
-| Remote tap, swipe, or typing | Not supported | No input implementation or privileged injection access |
+| Remote tap, swipe, or typing | Supported with the accessibility service enabled; otherwise a no-op | Requires user-enabled `MeshAccessibilityService` |
 | Secure or DRM content | Not capturable | Android secure-surface policy |
 | Silent capture after restart | Not supported | MediaProjection authorization and lifecycle rules |
 | Hide sharing notification | Not supported | Foreground-service requirement |

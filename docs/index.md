@@ -9,8 +9,9 @@ requests.
 
 The Android agent is a native Kotlin application and is separate from the
 MeshCentral agents for Windows, Linux, macOS, and FreeBSD. Remote desktop is
-currently **view only**: an operator can see the shared display, but cannot tap,
-swipe, type, or otherwise control the Android device.
+**view only** through Android's screen-capture path; when the user enables the
+bundled accessibility service, an operator can also tap, swipe, scroll, and send
+keys for unattended control.
 
 ## Get MeshAgent
 

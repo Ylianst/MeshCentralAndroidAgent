@@ -3,6 +3,8 @@ plugins {
     id 'com.google.gms.google-services'
 }
 
+def meshDevBuild = (project.findProperty("meshDevBuild") ?: new Date().format("yyyyMMddHHmm")).toString()
+
 def releaseKeystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
 def releaseKeystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
@@ -28,11 +30,14 @@ android {
         versionCode 30
         versionName "1.0.23"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        def enterpriseEnforced = (project.findProperty("meshEnterpriseEnforced") ?: "false").toString().toBoolean()
+        buildConfigField "boolean", "ENTERPRISE_ENFORCED", enterpriseEnforced.toString()
     }
 
     buildTypes {
         debug {
             debuggable true
+            versionNameSuffix "-dev.$meshDevBuild"
         }
         release {
             // Enables code shrinking, obfuscation, and optimization for only

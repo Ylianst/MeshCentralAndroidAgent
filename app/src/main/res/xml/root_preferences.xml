@@ -17,6 +17,33 @@
             app:summaryOff="@string/always_ask_for_consent_when_remote_agent_connects"
             app:defaultValue="false"
             app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:key="pref_session_notification"
+            app:title="@string/session_notification"
+            app:summaryOn="@string/session_notification_on"
+            app:summaryOff="@string/session_notification_off"
+            app:defaultValue="false"
+            app:useSimpleSummaryProvider="true" />
 
+    </PreferenceCategory>
+    <PreferenceCategory
+        app:title="@string/unattended_access"
+        app:icon="@drawable/ic_baseline_settings_24">
+        <Preference
+            app:key="pref_unattended_accessibility"
+            app:title="@string/unattended_accessibility"
+            app:summary="@string/unattended_accessibility_summary" />
+        <Preference
+            app:key="pref_battery_optimization"
+            app:title="@string/battery_optimization"
+            app:summary="@string/battery_optimization_summary" />
+        <Preference
+            app:key="pref_notification_permission"
+            app:title="@string/notification_permission"
+            app:summary="@string/notification_permission_summary" />
+        <Preference
+            app:key="pref_boot_start"
+            app:title="@string/boot_start"
+            app:summary="@string/boot_start_summary" />
     </PreferenceCategory>
 </PreferenceScreen>

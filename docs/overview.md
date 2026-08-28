@@ -23,9 +23,11 @@ are:
 - Approving or rejecting MeshCentral push-based two-factor authentication
   requests.
 
-The remote desktop implementation is currently **view only**. Protocol handlers
-for keyboard, mouse, Unicode key, and input-lock messages exist, but they are
-no-ops. This app does not currently provide general remote input control.
+Remote desktop is **view only** through the MediaProjection screen-capture path:
+the keyboard, mouse, and Unicode-key handlers are no-ops there. When the user
+enables the bundled `MeshAccessibilityService`, those messages are injected as
+accessibility gestures and key events for unattended control; input-lock remains
+a no-op.
 
 ## Project Snapshot
 
@@ -36,11 +38,11 @@ no-ops. This app does not currently provide general remote input control.
 | Application ID | `com.meshcentral.agent2` |
 | Kotlin namespace | `com.meshcentral.agent` |
 | Minimum Android SDK | 23 (Android 6.0) |
-| Compile/target SDK | 35 (Android 15) |
+| Compile/target SDK | 37 |
 | Version | `1.0.23` (`versionCode` 30) |
-| Kotlin | 1.9.10 |
-| Android Gradle Plugin | 8.6.1 |
-| Gradle wrapper | 8.7 |
+| Kotlin | Bundled with the Android Gradle Plugin |
+| Android Gradle Plugin | 9.3.1 |
+| Gradle wrapper | 9.5.0 |
 | Java/Kotlin target | JVM 17 |
 
 The package namespace and installed application ID intentionally differ in the
@@ -291,11 +293,9 @@ app/
 
 ## Building and Verification
 
-Use JDK 17 or Android Studio's bundled JDK 21 for the current Android Gradle
-Plugin 8.6.1 and Gradle 8.7 combination. Confirm that `JAVA_HOME` and
-`java -version` select one of those JDKs before building. Java 24 is not
-supported by this wrapper and fails during Gradle settings evaluation with
-`Unsupported class file major version 68`.
+Build with JDK 17 or newer for the current Android Gradle Plugin 9.3.1 and
+Gradle 9.5 combination. Confirm that `JAVA_HOME` and `java -version` select a
+supported JDK before building.
 
 From the repository root on Windows:
 

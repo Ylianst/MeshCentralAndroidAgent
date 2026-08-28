@@ -22,14 +22,16 @@ class ProtocolValidationTest {
     }
 
     @Test
-    fun acceptsAbsentOrMatchingTunnelUsage() {
+    fun acceptsAbsentOrAllowedTunnelUsage() {
         assertTrue(isTunnelUsageAllowed(null, 2))
-        assertTrue(isTunnelUsageAllowed(5, 5))
+        assertTrue(isTunnelUsageAllowed(listOf(5, 10), 5))
+        assertTrue(isTunnelUsageAllowed(listOf(1, 6, 8, 9, 2), 2))
     }
 
     @Test
-    fun rejectsMismatchedTunnelUsage() {
-        assertFalse(isTunnelUsageAllowed(2, 5))
+    fun rejectsUsageOutsideAllowedList() {
+        assertFalse(isTunnelUsageAllowed(listOf(5, 10), 2))
+        assertFalse(isTunnelUsageAllowed(emptyList(), 2))
     }
 
     @Test
@@ -51,5 +53,23 @@ class ProtocolValidationTest {
         assertNull(resolveSdcardChild(root, "Sdcard/Pictures", "../private.txt"))
         assertNull(resolveSdcardChild(root, "Sdcard/Pictures", "nested/photo.jpg"))
         assertFalse(isSafeFileName(".."))
+    }
+
+    @Test
+    fun rejectsSiblingDirectorySharingRootPrefix() {
+        val root = File("build/test-sdcard").canonicalFile
+
+        // Escapes to a sibling whose path shares the root's string prefix; only the trailing
+        // separator in the containment check keeps this from passing.
+        assertNull(resolveSdcardPath(root, "Sdcard/../test-sdcardEvil/photo.jpg"))
+    }
+
+    @Test
+    fun validatesSafeFileNames() {
+        assertTrue(isSafeFileName("photo.jpg"))
+        assertFalse(isSafeFileName(""))
+        assertFalse(isSafeFileName("."))
+        assertFalse(isSafeFileName("dir/photo.jpg"))
+        assertFalse(isSafeFileName("photo\u0000.jpg"))
     }
 }
