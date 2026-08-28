@@ -21,6 +21,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.CountDownTimer
+import android.os.Environment
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.security.keystore.KeyProtection
@@ -153,6 +154,17 @@ class MainActivity : AppCompatActivity() {
         intentFilter.addAction(Intent.ACTION_POWER_DISCONNECTED)
         intentFilter.addAction(Intent.ACTION_BATTERY_CHANGED)
         registerReceiver(batteryInfoReceiver, intentFilter)
+
+        //check if we can manage external storage
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            !Environment.isExternalStorageManager()
+        ) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(intent)
+        }
 
         // Check if this device has a camera
         cameraPresent = applicationContext.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)

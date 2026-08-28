@@ -180,7 +180,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun onMessage(webSocket: WebSocket, msg: ByteString) {
         try {
-            //println("onBinaryMessage: ${msg.size}, ${msg.toByteArray().toHex()}")
+            println("onBinaryMessage: ${msg.size}, ${msg.toByteArray().toHex()}")
             if (msg.size < 2) return;
             if ((connectionState == 3) && (msg[0].toInt() == 123)) {
                 // If we are authenticated, process JSON data
@@ -345,11 +345,11 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     }
 
     private fun processAgentData(jsonStr: String) {
-        //println("JSON: $jsonStr")
+        println("JSON: $jsonStr")
         try {
             val json = JSONObject(jsonStr)
             var action = json.getString("action")
-            //println("action: $action")
+            println("action: $action")
             when (action) {
                 "ping" -> {
                     // Return a pong

@@ -24,7 +24,7 @@ android {
         compileSdk 37
         targetSdk 37
         applicationId "com.meshcentral.agent2"
-        minSdk 23
+        minSdk 30
         versionCode 30
         versionName "1.0.23"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

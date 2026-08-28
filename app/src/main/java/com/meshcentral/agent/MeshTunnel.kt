@@ -179,11 +179,11 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
-        //println("Tunnel-onOpen")
+        println("Tunnel-onOpen")
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-        //println("Tunnel-onMessage: $text")
+        println("Tunnel-onMessage: $text")
         if (state == 0) {
             if ((text == "c") || (text == "cr")) { state = 1; }
             return
@@ -711,7 +711,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
 
     fun startFileTransfer(filename: String) {
         var filenameSplit = filename.split('/')
-        //println("startFileTransfer: $filenameSplit")
+        println("startFileTransfer: filename=$filename, split=$filenameSplit")
 
         val projection = arrayOf(
                 MediaStore.MediaColumns._ID,
@@ -724,10 +724,22 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
         if (filenameSplit[0].equals("Audio")) { uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI }
         if (filenameSplit[0].equals("Videos")) { uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI }
         //if (filenameSplit[0] == "Documents") { uri = MediaStore.Files. }
-        val mediaUri = uri ?: run { stopSocket(); return }
+        println("startFileTransfer: root=${filenameSplit[0]}, uri=$uri")
+        val mediaUri = uri ?: run {
+            println("startFileTransfer: no uri for root=${filenameSplit[0]}, stopping")
+            stopSocket()
+            return
+        }
         if (filenameSplit[0].startsWith("Sdcard")){
+            val externalStorageDirectory = Environment.getExternalStorageDirectory()
+            println("startFileTransfer: resolving Sdcard path, root=${externalStorageDirectory.absolutePath}, filename=$filename")
             val file = resolveSdcardPath(Environment.getExternalStorageDirectory(), filename)
-                ?: run { stopSocket(); return }
+                ?: run {
+                    println("startFileTransfer: failed to resolve Sdcard path, filename=$filename")
+                    stopSocket()
+                    return
+                }
+            println("startFileTransfer: resolved Sdcard path=${file.absolutePath}, exists=${file.exists()}, canRead=${file.canRead()}, isFile=${file.isFile}, length=${file.length()}")
             if (file.exists()) {
                 val fileName = file.name
                 val fileSize = file.length()
@@ -735,33 +747,59 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 eventArgs.put(fileName)
                 eventArgs.put(fileSize)
                 parent.logServerEventEx(106, eventArgs, "Download: ${fileName}, Size: $fileSize", serverData);
+                val okJson = JSONObject()
+                okJson.put("op", "ok")
+                okJson.put("size", fileSize)
+                val okSendResult = _webSocket?.send(okJson.toString())
+                println("startFileTransfer: sent Sdcard ok message, size=$fileSize, sendResult=$okSendResult")
                 val contentUrl = Uri.fromFile(file)
+                println("startFileTransfer: opening Sdcard input stream, uri=$contentUrl")
                 try {
                     // Serve the file
                     parent.parent.getContentResolver().openInputStream(contentUrl).use { stream ->
+                            println("startFileTransfer: Sdcard stream opened, streamNull=${stream == null}")
                             // Perform operation on stream
                             var buf = ByteArray(65535)
                             var len : Int
+                            var totalBytes: Long = 0
                             while (true) {
                                 len = stream!!.read(buf, 0, 65535)
-                                if (len <= 0) { stopSocket(); break; } // Stream is done
-                                if (_webSocket == null) { stopSocket(); break; } // Web socket closed
-                                _webSocket?.send(buf.toByteString(0, len))
-                                if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
+                                if (len <= 0) {
+                                    println("startFileTransfer: Sdcard stream finished, totalBytes=$totalBytes")
+                                    stopSocket()
+                                    break
+                                } // Stream is done
+                                if (_webSocket == null) {
+                                    println("startFileTransfer: websocket closed while sending Sdcard file, totalBytes=$totalBytes")
+                                    stopSocket()
+                                    break
+                                } // Web socket closed
+                                val sendResult = _webSocket?.send(buf.toByteString(0, len))
+                                totalBytes += len
+                                println("startFileTransfer: sent Sdcard chunk, len=$len, totalBytes=$totalBytes, sendResult=$sendResult, queueSize=${_webSocket?.queueSize()}")
+                                if (_webSocket?.queueSize()!! > 655350) {
+                                    println("startFileTransfer: websocket queue high, sleeping, queueSize=${_webSocket?.queueSize()}")
+                                    Thread.sleep(100)
+                                }
                             }
                         }
                     return;
                 } catch (e: FileNotFoundException) {
-                    // file not found
+                    println("startFileTransfer: Sdcard FileNotFoundException: ${e.message}")
+                } catch (e: Exception) {
+                    println("startFileTransfer: Sdcard exception: ${e.javaClass.simpleName}: ${e.message}")
                 }
             } else {
-                // file does not exist
+                println("startFileTransfer: Sdcard file does not exist, path=${file.absolutePath}")
             }
         } else {
             if (filenameSplit.size != 2 || !isSafeFileName(filenameSplit[1])) {
+                println("startFileTransfer: invalid MediaStore filename, split=$filenameSplit")
                 stopSocket()
                 return
             }
+                println("startFileTransfer: querying MediaStore, uri=$mediaUri, target=${filenameSplit[1]}")
+                var foundFile = false
                 parent.parent.contentResolver.query(
                     mediaUri,
                     projection,
@@ -769,39 +807,68 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     null,
                     null
                 )?.use { cursor ->
+                println("startFileTransfer: MediaStore query returned, count=${cursor.count}")
                 val idColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val titleColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                 val sizeColumn: Int = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
                 while (cursor.moveToNext()) {
                     var name = cursor.getString(titleColumn)
+                    println("startFileTransfer: MediaStore row name=$name")
                     if (name == filenameSplit[1]) {
+                        foundFile = true
                         var contentUrl: Uri = ContentUris.withAppendedId(mediaUri, cursor.getLong(idColumn))
                         var fileSize = cursor.getInt(sizeColumn)
+                        println("startFileTransfer: MediaStore match, uri=$contentUrl, size=$fileSize")
 
                         // Event to the server
                         var eventArgs = JSONArray()
                         eventArgs.put(filename)
                         eventArgs.put(fileSize)
                         parent.logServerEventEx(106, eventArgs, "Download: ${filename}, Size: $fileSize", serverData);
+                        val okJson = JSONObject()
+                        okJson.put("op", "ok")
+                        okJson.put("size", fileSize)
+                        val okSendResult = _webSocket?.send(okJson.toString())
+                        println("startFileTransfer: sent MediaStore ok message, size=$fileSize, sendResult=$okSendResult")
 
                         // Serve the file
+                        println("startFileTransfer: opening MediaStore input stream, uri=$contentUrl")
                         parent.parent.getContentResolver().openInputStream(contentUrl).use { stream ->
+                            println("startFileTransfer: MediaStore stream opened, streamNull=${stream == null}")
                             // Perform operation on stream
                             var buf = ByteArray(65535)
                             var len : Int
+                            var totalBytes: Long = 0
                             while (true) {
                                 len = stream!!.read(buf, 0, 65535)
-                                if (len <= 0) { stopSocket(); break; } // Stream is done
-                                if (_webSocket == null) { stopSocket(); break; } // Web socket closed
-                                _webSocket?.send(buf.toByteString(0, len))
-                                if (_webSocket?.queueSize()!! > 655350) { Thread.sleep(100)}
+                                if (len <= 0) {
+                                    println("startFileTransfer: MediaStore stream finished, totalBytes=$totalBytes")
+                                    stopSocket()
+                                    break
+                                } // Stream is done
+                                if (_webSocket == null) {
+                                    println("startFileTransfer: websocket closed while sending MediaStore file, totalBytes=$totalBytes")
+                                    stopSocket()
+                                    break
+                                } // Web socket closed
+                                val sendResult = _webSocket?.send(buf.toByteString(0, len))
+                                totalBytes += len
+                                println("startFileTransfer: sent MediaStore chunk, len=$len, totalBytes=$totalBytes, sendResult=$sendResult, queueSize=${_webSocket?.queueSize()}")
+                                if (_webSocket?.queueSize()!! > 655350) {
+                                    println("startFileTransfer: websocket queue high, sleeping, queueSize=${_webSocket?.queueSize()}")
+                                    Thread.sleep(100)
+                                }
                             }
                         }
                         return;
                     }
                 }
             }
+            if (!foundFile) {
+                println("startFileTransfer: MediaStore file not found, target=${filenameSplit[1]}")
+            }
         }
+        println("startFileTransfer: stopping without transfer, filename=$filename")
         stopSocket()
     }
 
