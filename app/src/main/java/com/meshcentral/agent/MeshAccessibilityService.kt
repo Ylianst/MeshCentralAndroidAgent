@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -30,9 +31,16 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     @Volatile private var lastHeight = 0
     private var pointerDownX: Int? = null
     private var pointerDownY: Int? = null
+    // In-progress drag: path points and start time, so the gesture follows real motion.
+    private var dragPoints: ArrayList<Float>? = null
+    private var dragStartUptimeMs = 0L
     private var unsupportedKeyboardNotified = false
     @Volatile private var nextFrameDelayMs = MIN_FRAME_DELAY_MS
     @Volatile private var screenshotErrorNotified = false
+    @Volatile private var lastCaptureUptimeMs = 0L
+    // Accessibility runs one gesture at a time; queue them so quick taps aren't dropped.
+    private val gestureQueue = ArrayDeque<GestureDescription>()
+    private var gestureInFlight = false
 
     override val isRunning: Boolean
         get() = active
@@ -62,7 +70,8 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (!active) return
-        nextFrameDelayMs = MIN_FRAME_DELAY_MS
+        // A visible change just happened; pull the next capture forward instead of waiting out the backoff.
+        wakeCapture()
     }
 
     override fun onInterrupt() {
@@ -98,8 +107,8 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     }
 
     override fun requestFullFrame() {
-        nextFrameDelayMs = MIN_FRAME_DELAY_MS
         encoder.requestFullFrame()
+        wakeCapture()
     }
 
     override fun handleMouseCommand(msg: ByteString): Boolean {
@@ -128,24 +137,76 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
                 true
             }
             flags == 0x02 || flags == 0x08 || flags == 0x20 -> {
-                pointerDownX = x
-                pointerDownY = y
+                beginDrag(x, y)
+                true
+            }
+            // Move with a button held = drag; no button = hover.
+            flags == 0x00 -> {
+                extendDrag(x, y)
                 true
             }
             flags == 0x04 || flags == 0x10 || flags == 0x40 -> {
-                val startX = pointerDownX ?: x
-                val startY = pointerDownY ?: y
-                pointerDownX = null
-                pointerDownY = null
-                if ((startX - x).absoluteValue < 8 && (startY - y).absoluteValue < 8) {
-                    dispatchTap(x, y)
-                } else {
-                    dispatchSwipe(startX, startY, x, y, 350)
-                }
+                endDrag(x, y)
                 true
             }
             else -> true
         }
+    }
+
+    private fun beginDrag(x: Int, y: Int) {
+        pointerDownX = x
+        pointerDownY = y
+        dragStartUptimeMs = SystemClock.uptimeMillis()
+        dragPoints = arrayListOf(x.toFloat(), y.toFloat())
+    }
+
+    private fun extendDrag(x: Int, y: Int) {
+        val pts = dragPoints ?: return
+        val n = pts.size
+        if (n >= 2 && pts[n - 2] == x.toFloat() && pts[n - 1] == y.toFloat()) return
+        if (pts.size < MAX_DRAG_POINTS * 2) {
+            pts.add(x.toFloat())
+            pts.add(y.toFloat())
+        }
+    }
+
+    private fun endDrag(x: Int, y: Int) {
+        val startX = pointerDownX ?: x
+        val startY = pointerDownY ?: y
+        val pts = dragPoints
+        pointerDownX = null
+        pointerDownY = null
+        dragPoints = null
+        val moved = (startX - x).absoluteValue >= 8 || (startY - y).absoluteValue >= 8
+        if (!moved || pts == null) {
+            dispatchTap(x, y)
+            return
+        }
+        pts.add(x.toFloat())
+        pts.add(y.toFloat())
+        // Real hold time drives gesture duration, so a flick stays a flick.
+        val elapsed = (SystemClock.uptimeMillis() - dragStartUptimeMs)
+            .coerceIn(MIN_DRAG_DURATION_MS, MAX_DRAG_DURATION_MS)
+        dispatchDrag(pts, elapsed)
+    }
+
+    private fun dispatchDrag(pts: List<Float>, durationMs: Long) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || pts.size < 4) return
+        val path = Path()
+        path.moveTo(pts[0], pts[1])
+        var i = 2
+        while (i + 1 < pts.size) {
+            path.lineTo(pts[i], pts[i + 1])
+            i += 2
+        }
+        val gesture = try {
+            GestureDescription.Builder()
+                .addStroke(GestureDescription.StrokeDescription(path, 0, durationMs))
+                .build()
+        } catch (ex: Exception) {
+            return
+        }
+        dispatchGestureQueued(gesture)
     }
 
     override fun handleTouchCommand(msg: ByteString): Boolean {
@@ -180,16 +241,19 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
     }
 
     override fun handleKeyCommand(cmd: Int, msg: ByteString): Boolean {
-        return when (cmd) {
+        val handled = when (cmd) {
             1 -> handleLegacyKey(msg)
             85 -> handleUnicodeKey(msg)
             else -> false
         }
+        if (handled) wakeCapture()
+        return handled
     }
 
     private fun captureFrame() {
         if (!active || capturing || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
         capturing = true
+        lastCaptureUptimeMs = SystemClock.uptimeMillis()
         try {
             takeScreenshot(Display.DEFAULT_DISPLAY, captureExecutor, screenshotCallback)
         } catch (ex: Exception) {
@@ -245,9 +309,14 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
 
         override fun onFailure(errorCode: Int) {
             capturing = false
-            // Throttled or transient error; back off quietly instead of flooding the console.
+            if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) {
+                // We asked too soon; retry at the throttle interval rather than backing off toward idle.
+                scheduleNextCapture()
+                return
+            }
+            // Transient error; back off quietly instead of flooding the console.
             nextFrameDelayMs = min(nextFrameDelayMs * 2, MAX_IDLE_FRAME_DELAY_MS)
-            if (errorCode != AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT && !screenshotErrorNotified) {
+            if (!screenshotErrorNotified) {
                 screenshotErrorNotified = true
                 AgentController.sendDesktopMessage("Unable to capture unattended screenshot, error $errorCode.")
             }
@@ -263,51 +332,170 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
         mainHandler.postDelayed(captureRunnable, delay)
     }
 
+    // Pull the next capture forward on activity so an idle-backed-off loop isn't stuck on a stale frame.
+    private fun wakeCapture() {
+        if (!active) return
+        nextFrameDelayMs = MIN_FRAME_DELAY_MS
+        if (capturing) return
+        val sinceLast = SystemClock.uptimeMillis() - lastCaptureUptimeMs
+        val delay = max(0L, MIN_SCREENSHOT_INTERVAL_MS - sinceLast)
+        mainHandler.removeCallbacks(captureRunnable)
+        mainHandler.postDelayed(captureRunnable, delay)
+    }
+
+    // dispatchGesture drops overlapping gestures, so serialize them; quick taps aren't lost.
+    private fun dispatchGestureQueued(gesture: GestureDescription) {
+        wakeCapture()
+        mainHandler.post {
+            if (gestureQueue.size >= MAX_QUEUED_GESTURES) gestureQueue.removeFirst()
+            gestureQueue.addLast(gesture)
+            pumpGestures()
+        }
+    }
+
+    private fun pumpGestures() {
+        if (gestureInFlight) return
+        val gesture = gestureQueue.removeFirstOrNull() ?: return
+        gestureInFlight = true
+        dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                gestureInFlight = false
+                pumpGestures()
+            }
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                gestureInFlight = false
+                pumpGestures()
+            }
+        }, mainHandler)
+    }
+
     private fun handleLegacyKey(msg: ByteString): Boolean {
         if (msg.size < 6) return false
         val action = u(msg[4])
         val keyCode = u(msg[5])
         if (action != 0) return true
         when (keyCode) {
-            8 -> return editFocusedText { if (it.isNotEmpty()) it.dropLast(1) else it }
-            13 -> return editFocusedText { "$it\n" }
-            27 -> {
-                performGlobalAction(GLOBAL_ACTION_BACK)
-                return true
-            }
-            36 -> {
-                performGlobalAction(GLOBAL_ACTION_HOME)
-                return true
-            }
-            93 -> {
-                performGlobalAction(GLOBAL_ACTION_RECENTS)
-                return true
-            }
+            8 -> return backspaceFocused()
+            13 -> return insertFocused("\n")
+            37 -> return moveFocusedCursor(-1)
+            39 -> return moveFocusedCursor(1)
+            38 -> return moveFocusedCursorLine(-1)
+            40 -> return moveFocusedCursorLine(1)
+            27 -> return globalAction(GLOBAL_ACTION_BACK)
+            36 -> return globalAction(GLOBAL_ACTION_HOME)
+            93 -> return globalAction(GLOBAL_ACTION_RECENTS)
+            // Codes above the keyboard range are the desktop panel's Android action buttons.
+            200 -> return globalAction(GLOBAL_ACTION_ACCESSIBILITY_ALL_APPS, Build.VERSION_CODES.S) // App drawer
+            201 -> return globalAction(GLOBAL_ACTION_NOTIFICATIONS)
+            202 -> return globalAction(GLOBAL_ACTION_QUICK_SETTINGS)
+            203 -> return globalAction(GLOBAL_ACTION_LOCK_SCREEN, Build.VERSION_CODES.P)
+            204 -> return globalAction(GLOBAL_ACTION_POWER_DIALOG)
         }
         notifyUnsupportedKeyboard()
         return false
     }
 
+    private fun globalAction(action: Int, minSdk: Int = 0): Boolean {
+        if (Build.VERSION.SDK_INT < minSdk) return false
+        performGlobalAction(action)
+        return true
+    }
+
     private fun handleUnicodeKey(msg: ByteString): Boolean {
         if (msg.size < 7) return false
-        val action = u(msg[4])
-        if (action != 0) return true
+        // Insert on key-up (action 1). The browser keypress that carries the key-down is deprecated and
+        // often doesn't fire, but key-up always does; the panel and physical typing both send an up.
+        if (u(msg[4]) != 1) return true
         val charCode = readShort(msg, 5)
-        val char = charCode.toChar().toString()
-        return editFocusedText { it + char }.also {
+        return insertFocused(charCode.toChar().toString()).also {
             if (!it) notifyUnsupportedKeyboard()
         }
     }
 
-    private fun editFocusedText(transform: (String) -> String): Boolean {
-        val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
-        if (!node.isEditable) return false
+    private fun focusedEditable(): AccessibilityNodeInfo? {
+        val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return null
+        return if (node.isEditable) node else null
+    }
+
+    // A shown hint reads back as node text; treat it as empty so it isn't captured as real content.
+    private fun fieldText(node: AccessibilityNodeInfo): String {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && node.isShowingHintText) return ""
+        return node.text?.toString() ?: ""
+    }
+
+    private fun selectionRange(node: AccessibilityNodeInfo, len: Int): Pair<Int, Int> {
+        var s = node.textSelectionStart
+        var e = node.textSelectionEnd
+        if (s < 0 || s > len) s = len
+        if (e < 0 || e > len) e = len
+        return if (s <= e) Pair(s, e) else Pair(e, s)
+    }
+
+    private fun setCursor(node: AccessibilityNodeInfo, pos: Int): Boolean {
         val args = Bundle()
-        args.putCharSequence(
-            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-            transform(node.text?.toString() ?: "")
-        )
-        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, pos)
+        args.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, pos)
+        return node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, args)
+    }
+
+    private fun replaceText(node: AccessibilityNodeInfo, text: String, cursor: Int): Boolean {
+        val args = Bundle()
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+        if (!node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+        setCursor(node, cursor)
+        return true
+    }
+
+    private fun insertFocused(insert: String): Boolean {
+        val node = focusedEditable() ?: return false
+        val text = fieldText(node)
+        val (s, e) = selectionRange(node, text.length)
+        return replaceText(node, text.substring(0, s) + insert + text.substring(e), s + insert.length)
+    }
+
+    private fun backspaceFocused(): Boolean {
+        val node = focusedEditable() ?: return false
+        val text = fieldText(node)
+        val (s, e) = selectionRange(node, text.length)
+        return when {
+            s != e -> replaceText(node, text.substring(0, s) + text.substring(e), s)
+            s > 0 -> replaceText(node, text.substring(0, s - 1) + text.substring(s), s - 1)
+            else -> true
+        }
+    }
+
+    private fun moveFocusedCursor(delta: Int): Boolean {
+        val node = focusedEditable() ?: return true
+        val text = fieldText(node)
+        val (s, e) = selectionRange(node, text.length)
+        // A selection collapses to its near edge; otherwise step one character.
+        val pos = when {
+            s != e && delta < 0 -> s
+            s != e && delta > 0 -> e
+            else -> (e + delta).coerceIn(0, text.length)
+        }
+        return setCursor(node, pos)
+    }
+
+    private fun moveFocusedCursorLine(dir: Int): Boolean {
+        val node = focusedEditable() ?: return true
+        val text = fieldText(node)
+        val (_, e) = selectionRange(node, text.length)
+        val lineStart = text.lastIndexOf('\n', (e - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val col = e - lineStart
+        val pos = if (dir < 0) {
+            if (lineStart == 0) 0 else {
+                val prevStart = text.lastIndexOf('\n', lineStart - 2).let { if (it < 0) 0 else it + 1 }
+                (prevStart + col).coerceAtMost(lineStart - 1)
+            }
+        } else {
+            val lineEnd = text.indexOf('\n', e)
+            if (lineEnd < 0) text.length else {
+                val nextEnd = text.indexOf('\n', lineEnd + 1).let { if (it < 0) text.length else it }
+                (lineEnd + 1 + col).coerceAtMost(nextEnd)
+            }
+        }
+        return setCursor(node, pos)
     }
 
     private fun notifyUnsupportedKeyboard() {
@@ -323,7 +511,7 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, 80))
             .build()
-        dispatchGesture(gesture, null, null)
+        dispatchGestureQueued(gesture)
     }
 
     private fun dispatchSwipe(startX: Int, startY: Int, endX: Int, endY: Int, duration: Long) {
@@ -334,7 +522,7 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
             .build()
-        dispatchGesture(gesture, null, null)
+        dispatchGestureQueued(gesture)
     }
 
     private fun updateTunnelDisplaySize() {
@@ -368,8 +556,13 @@ class MeshAccessibilityService : AccessibilityService(), RemoteDesktopProvider {
         var instance: MeshAccessibilityService? = null
             private set
         private const val MIN_FRAME_DELAY_MS = 100L
-        private const val MAX_IDLE_FRAME_DELAY_MS = 10_000L
-        // System throttles takeScreenshot() faster than ~3 fps.
+        // Idle cap; activity wakes capture immediately, so this only bounds silent-change latency.
+        private const val MAX_IDLE_FRAME_DELAY_MS = 2_000L
+        // System throttles takeScreenshot() faster than ~3 fps (AOSP interval is 333ms).
         private const val MIN_SCREENSHOT_INTERVAL_MS = 350L
+        private const val MAX_QUEUED_GESTURES = 16
+        private const val MAX_DRAG_POINTS = 64
+        private const val MIN_DRAG_DURATION_MS = 40L
+        private const val MAX_DRAG_DURATION_MS = 1500L
     }
 }

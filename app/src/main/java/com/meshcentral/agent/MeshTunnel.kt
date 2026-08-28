@@ -223,8 +223,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                     if (usage == 2) {
                         // If this is a remote desktop usage...
                         if (!g_autoConsent && !AgentController.isRemoteDesktopRunning()) {
-                            // Ask for consent over this desktop tunnel, so the response reaches the
-                            // viewer that opened it rather than whichever tunnel happens to be first.
+                            // Consent goes over this desktop tunnel so it reaches the viewer that opened it.
                             val json = JSONObject()
                             val msg = if (!AgentController.isAccessibilityServiceEnabled() && g_mainActivity == null) {
                                 "Open the Android app to approve screen capture, or enable Accessibility Remote Control for unattended desktop."
