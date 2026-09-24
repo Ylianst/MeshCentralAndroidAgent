@@ -139,6 +139,26 @@ Please set the JAVA_HOME variable in your environment to match the
 location of your Java installation."
 fi
 
+java_major=$("$JAVACMD" -version 2>&1 | sed -n 's/.* version "\([0-9][0-9]*\).*/\1/p' | head -n 1)
+if [ "$java_major" -ge 22 ] 2>/dev/null; then
+    for java_home_candidate in "$JAVA17_HOME" "$JDK17_HOME" "$JAVA_HOME_17_X64" \
+        /usr/lib/jvm/java-17-openjdk \
+        /usr/lib/jvm/java-17-openjdk-amd64 \
+        /Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home \
+        /Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home
+    do
+        if [ -n "$java_home_candidate" ] && [ -x "$java_home_candidate/bin/java" ]; then
+            JAVA_HOME=$java_home_candidate
+            JAVACMD=$JAVA_HOME/bin/java
+            java_major=$("$JAVACMD" -version 2>&1 | sed -n 's/.* version "\([0-9][0-9]*\).*/\1/p' | head -n 1)
+            break
+        fi
+    done
+fi
+if [ "$java_major" -ge 22 ] 2>/dev/null; then
+    DEFAULT_JVM_OPTS="$DEFAULT_JVM_OPTS \"--enable-native-access=ALL-UNNAMED\""
+fi
+
 # Increase the maximum file descriptors if we can.
 if ! "$cygwin" && ! "$darwin" && ! "$nonstop" ; then
     case $MAX_FD in #(

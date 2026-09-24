@@ -7,6 +7,8 @@
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
+/.idea/git_toolbox_prj.xml
+.vscode/
 .DS_Store
 /build
 /release

@@ -14,18 +14,25 @@ are:
   pairing-link entry.
 - Maintaining an authenticated WebSocket connection to the server.
 - Reporting device, network, storage, and battery information.
-- Sharing the display through Android's MediaProjection API after user consent,
-  or automatically when the automatic-consent preference is enabled.
+- Sharing the display, through the accessibility service in the background or
+  through Android's MediaProjection API, with consent prompts driven by the
+  automatic-consent preference and the server's consent flags.
 - Browsing and transferring images, audio, video, and files that Android makes
-  available to the app.
+  available to the app. Uploads go through MediaStore under scoped storage, so
+  under `Sdcard` they only work inside the standard folders (Download,
+  Documents, Pictures, DCIM, Movies, Music); other folders are refused with a
+  message on the Files tab.
+- Listing installed, launchable apps for the Software tab.
 - Receiving Firebase Cloud Messaging (FCM) notifications and limited console
   commands.
 - Approving or rejecting MeshCentral push-based two-factor authentication
   requests.
 
-The remote desktop implementation is currently **view only**. Protocol handlers
-for keyboard, mouse, Unicode key, and input-lock messages exist, but they are
-no-ops. This app does not currently provide general remote input control.
+Remote desktop is **view only** through the MediaProjection screen-capture path:
+the keyboard, mouse, and Unicode-key handlers are no-ops there. When the user
+enables the bundled `MeshAccessibilityService`, those messages are injected as
+accessibility gestures and key events for unattended control; input-lock remains
+a no-op.
 
 ## Project Snapshot
 
@@ -36,11 +43,11 @@ no-ops. This app does not currently provide general remote input control.
 | Application ID | `com.meshcentral.agent2` |
 | Kotlin namespace | `com.meshcentral.agent` |
 | Minimum Android SDK | 23 (Android 6.0) |
-| Compile/target SDK | 35 (Android 15) |
+| Compile/target SDK | 37 |
 | Version | `1.0.23` (`versionCode` 30) |
-| Kotlin | 1.9.10 |
-| Android Gradle Plugin | 8.6.1 |
-| Gradle wrapper | 8.7 |
+| Kotlin | Bundled with the Android Gradle Plugin |
+| Android Gradle Plugin | 9.3.1 |
+| Gradle wrapper | 9.5.0 |
 | Java/Kotlin target | JVM 17 |
 
 The package namespace and installed application ID intentionally differ in the
@@ -126,12 +133,16 @@ in addition to the mobile/desktop-view capability.
 session. Implemented tunnel usages are:
 
 - **Usage 2, remote desktop:** negotiates display settings and streams screen
-  images. Remote keyboard and pointer command cases are recognized but ignored.
+  images. Pointer and key commands are forwarded to the accessibility service
+  when it is enabled and ignored otherwise.
 - **Usage 5, files:** lists shared storage and MediaStore collections, accepts
-  uploads, and handles deletion. Modern Android deletion can invoke the system's
-  recoverable-security consent flow.
+  uploads, serves the web file editor's block downloads, and handles deletion.
+  Requests are held until the device user approves when consent is required.
+  Modern Android deletion can invoke the system's recoverable-security consent
+  flow.
 - **Usage 10, file transfer:** streams a selected file from shared storage or a
-  MediaStore collection to the server.
+  MediaStore collection to the server's download endpoint on its own thread.
+  A file the agent cannot read is reported on the operator's files session.
 
 The virtual roots presented to MeshCentral are `Sdcard`, `Images`, `Audio`, and
 `Videos`. Behavior differs across Android versions because Android 10 and later
@@ -206,15 +217,21 @@ users cannot replace or clear the configured server.
 
 1. The server asks the control channel to create a relay tunnel.
 2. A usage-2 tunnel requests MediaProjection if capture is not already active.
-3. Android obtains explicit user consent unless automatic consent is enabled and
-   a reusable projection can be started by the current app state.
+3. The device user is prompted unless automatic consent is enabled and the
+   server's consent flags do not require a prompt; an active capture is reused.
 4. `ScreenCaptureService` sends changed image regions through every active
    desktop tunnel.
 
 ### Media and File Access
 
-1. A usage-5 tunnel lists virtual media roots or a requested directory.
-2. Downloads use a usage-10 tunnel and stream the selected content.
+1. A usage-5 tunnel lists virtual media roots or a requested directory. Under
+   `Sdcard`, media-only folders such as DCIM and Pictures are listed from the
+   MediaStore index on Android 10+, which is several times faster than walking
+   the directory; other folders and anything unindexed use the directory walk.
+2. Downloads use a usage-10 tunnel opened by the server, or the files session's
+   block protocol for the web file editor; either way the file is read from its
+   raw path or its MediaStore row, and a file the agent cannot read is reported
+   on the operator's files session.
 3. Uploads write through MediaStore on Android 10+ for supported media types, or
    to public storage on older Android versions.
 4. Deletions may require Android's per-item confirmation UI.
@@ -239,14 +256,26 @@ The manifest declares:
 - Notifications: `POST_NOTIFICATIONS`.
 - Media access on Android 13+: `READ_MEDIA_IMAGES`, `READ_MEDIA_AUDIO`, and
   `READ_MEDIA_VIDEO`.
-- Legacy shared storage: `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE`,
-  with legacy external-storage behavior requested by the application.
+- Legacy shared storage: `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE`
+  on the Android versions that still use them.
+- Optional full storage access: `MANAGE_EXTERNAL_STORAGE`, only in builds made
+  with `-PmeshAllFilesAccess=true` (see Build Options).
 - Screen capture: `FOREGROUND_SERVICE` and
   `FOREGROUND_SERVICE_MEDIA_PROJECTION`.
+- Background operation: `FOREGROUND_SERVICE_SPECIAL_USE` for the persistent
+  agent service, `RECEIVE_BOOT_COMPLETED`, and
+  `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
+- Waking the display for a remote session: `WAKE_LOCK` and `TURN_SCREEN_ON`.
+- Unattended control: `MeshAccessibilityService`, bound by the system with
+  `BIND_ACCESSIBILITY_SERVICE` once the user enables it.
 
 The camera is optional hardware. The manifest registers `MainActivity`, the FCM
-service, and `ScreenCaptureService`. It also removes Google Mobile Ads' `AD_ID`
-permission during manifest merging.
+service, `AgentForegroundService`, `ScreenCaptureService`, the accessibility
+service, and `BootReceiver`. It queries the default launcher so the
+accessibility service can tell when the home screen is in front, and every app
+with a launcher entry so the Software tab can list installed apps without
+`QUERY_ALL_PACKAGES`. It also removes Google Mobile Ads' `AD_ID` permission
+during manifest merging.
 
 ## Dependencies
 
@@ -291,11 +320,9 @@ app/
 
 ## Building and Verification
 
-Use JDK 17 or Android Studio's bundled JDK 21 for the current Android Gradle
-Plugin 8.6.1 and Gradle 8.7 combination. Confirm that `JAVA_HOME` and
-`java -version` select one of those JDKs before building. Java 24 is not
-supported by this wrapper and fails during Gradle settings evaluation with
-`Unsupported class file major version 68`.
+Build with JDK 17 or newer for the current Android Gradle Plugin 9.3.1 and
+Gradle 9.5 combination. Confirm that `JAVA_HOME` and `java -version` select a
+supported JDK before building.
 
 From the repository root on Windows:
 
@@ -324,6 +351,19 @@ For device-level verification, exercise at least:
   Android versions.
 - Foreground/background notification and 2FA delivery.
 - Notification, camera, media, and MediaProjection permission denial.
+
+### Build Options
+
+Two Gradle properties change what a build contains; both default to off and
+neither is set by the GitHub release workflow:
+
+- `-PmeshEnterpriseEnforced=true` locks automatic connection and consent on for
+  managed devices (`BuildConfig.ENTERPRISE_ENFORCED`).
+- `-PmeshAllFilesAccess=true` declares `MANAGE_EXTERNAL_STORAGE` and shows an
+  "All files access" entry in Settings, so the agent can read and write any file
+  on shared storage on Android 11+ once the user grants it. It is off by default
+  because Google Play only accepts that permission with an approved use-case
+  declaration.
 
 ## Maintenance Considerations
 

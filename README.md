@@ -10,15 +10,20 @@ link, or entering the link manually. After enrollment, the app maintains an
 authenticated connection to the server and can:
 
 - Report device, network, storage, and battery information.
-- Share the device screen after Android MediaProjection consent.
+- Share the device screen, and control it once the bundled accessibility
+  service is enabled.
 - Browse and transfer media and files available to the app.
 - Receive server notifications and a limited set of console commands.
 - Approve or reject MeshCentral push-based two-factor authentication requests.
 
-Remote desktop is currently **view only**. The app can stream the display, but
-it cannot tap, swipe, type, or otherwise control the device. Android displays a
-foreground notification while screen sharing is active, and the user can deny
-or stop capture at any time.
+Remote desktop works two ways. Without extra setup it is **view only** through
+Android's screen-capture consent dialog. Once the device user enables the
+bundled Accessibility Remote Control service, the agent captures the screen in
+the background and injects taps, drags, long presses, scrolling and typing, so
+an operator can control the device unattended. Android shows a persistent
+notification while a session is active, consent prompts follow the server's
+policy and the app's Automatic Consent setting, and the user can deny or stop
+sharing at any time.
 
 ## Install
 
@@ -53,6 +58,7 @@ releases require a dedicated signing keystore; see the release guide below.
 	capabilities, and links to all project resources.
 - [Repository overview](docs/overview.md) - architecture, components, project
 	configuration, and development notes.
+- [Testing](docs/testing.md) - portable checks, reports, and coverage limits.
 - [Remote desktop](docs/remote-desktop.md) - screen-capture flow, consent,
 	encoding, and Android platform limitations.
 - [Tunnel authentication](docs/tunnel-authentication.md) - control-channel

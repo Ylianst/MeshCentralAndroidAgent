@@ -3,6 +3,8 @@ plugins {
     id 'com.google.gms.google-services'
 }
 
+def meshDevBuild = (project.findProperty("meshDevBuild") ?: new Date().format("yyyyMMddHHmm")).toString()
+
 def releaseKeystorePath = System.getenv('ANDROID_KEYSTORE_PATH')
 def releaseKeystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS')
@@ -28,11 +30,21 @@ android {
         versionCode 30
         versionName "1.0.23"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        def enterpriseEnforced = (project.findProperty("meshEnterpriseEnforced") ?: "false").toString().toBoolean()
+        buildConfigField "boolean", "ENTERPRISE_ENFORCED", enterpriseEnforced.toString()
+        // Optional "All files access" (MANAGE_EXTERNAL_STORAGE) for full file transfer on Android 11+.
+        // Off by default: Google Play only accepts that permission with an approved use-case
+        // declaration, so declare it just for enterprise or sideloaded builds. When off, the
+        // placeholder resolves to a permission the manifest already has, so nothing new is added.
+        def allFilesAccess = (project.findProperty("meshAllFilesAccess") ?: "false").toString().toBoolean()
+        buildConfigField "boolean", "ALL_FILES_ACCESS", allFilesAccess.toString()
+        manifestPlaceholders["allFilesAccessPermission"] = allFilesAccess ? "android.permission.MANAGE_EXTERNAL_STORAGE" : "android.permission.INTERNET"
     }
 
     buildTypes {
         debug {
             debuggable true
+            versionNameSuffix "-dev.$meshDevBuild"
         }
         release {
             // Enables code shrinking, obfuscation, and optimization for only
@@ -90,4 +102,5 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.preference:preference-ktx:1.2.1'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
 }

@@ -173,10 +173,22 @@ machine driven by `onMessage`:
 
 ## User Consent
 
-For a remote desktop tunnel (`usage == 2`), if the automatic-consent preference
-is off and no capture session is active, the agent asks the user to grant screen
-sharing before streaming begins. With automatic consent enabled, or an existing
-capture already running, the session starts immediately.
+The tunnel command carries the server's consent policy as a `consent` bitmask
+(desktop notify 1, files notify 4, desktop prompt 8, files prompt 32) plus
+optional `soptions` text (`consentTitle`, `consentMsgDesktop`,
+`consentMsgFiles`, `notifyMsg*`, `consentTimeout`, `consentAutoAccept`). The
+agent prompts the device user when the automatic-consent preference is off, or
+when the server sets the prompt bit for that session type:
+
+- Remote desktop (`usage == 2`): if no capture session is active, the viewer
+  sees "Waiting for user to grant access..." until the user approves in the app
+  dialog or on the notification. An existing capture is joined without a prompt.
+- Files (`usage == 5`): the viewer's requests are held until the user approves;
+  a denial closes the tunnel with the "Denied" message.
+
+Prompts expire after `consentTimeout` seconds (30 by default) and count as a
+denial unless the server sets `consentAutoAccept`. The notify bits show a toast
+on the device when a session starts without a prompt.
 
 ## Security Notes
 

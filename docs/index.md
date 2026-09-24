@@ -9,8 +9,9 @@ requests.
 
 The Android agent is a native Kotlin application and is separate from the
 MeshCentral agents for Windows, Linux, macOS, and FreeBSD. Remote desktop is
-currently **view only**: an operator can see the shared display, but cannot tap,
-swipe, type, or otherwise control the Android device.
+**view only** through Android's screen-capture path; when the user enables the
+bundled accessibility service, an operator can also tap, long-press, drag,
+scroll, and type for unattended control.
 
 ## Get MeshAgent
 
@@ -25,8 +26,10 @@ opening an `mc://` pairing link, or entering the pairing link manually.
 ## Capabilities
 
 - Report device, network, storage, and battery information.
-- Share the device screen after Android MediaProjection consent.
+- Share and control the device screen, with consent prompts per the app setting
+  and the server's policy.
 - Browse and transfer media and files available to the app.
+- List installed apps on the Software tab.
 - Receive server notifications and supported console commands.
 - Approve or reject MeshCentral push-based two-factor authentication requests.
 
@@ -38,6 +41,7 @@ time.
 
 - [Repository overview](overview.md) - architecture, components, configuration,
   data flows, and development notes.
+- [Testing](testing.md) - portable checks, reports, and coverage limits.
 - [Remote desktop](remote-desktop.md) - screen capture, consent, encoding, and
   Android platform limitations.
 - [Tunnel authentication](tunnel-authentication.md) - control-channel

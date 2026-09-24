@@ -13,8 +13,11 @@ internal fun isMeshServerLinkValid(value: String): Boolean {
         parts[2].length >= 3
 }
 
-internal fun isTunnelUsageAllowed(expectedUsage: Int?, actualUsage: Int): Boolean {
-    return expectedUsage == null || expectedUsage == actualUsage
+// The server restricts what a relay connection may do through soptions.usages, a list of allowed
+// protocol numbers derived from the session's rights. It's only sent for limited sessions (e.g.
+// guest shares); an absent list means unrestricted, matching meshcore.js onTunnelData.
+internal fun isTunnelUsageAllowed(allowedUsages: List<Int>?, actualUsage: Int): Boolean {
+    return allowedUsages == null || allowedUsages.contains(actualUsage)
 }
 
 internal fun isSafeFileName(name: String): Boolean {

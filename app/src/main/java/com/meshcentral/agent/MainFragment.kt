@@ -1,6 +1,5 @@
 package com.meshcentral.agent
 
-import android.R.attr.*
 import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.res.Resources
@@ -68,24 +67,24 @@ class MainFragment : Fragment() {
     }
 
     fun moveToScanner() {
-        println("moveToScanner $visibleScreen")
-        if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment) }
+        if (visibleScreen != 1) return
+        try { findNavController().navigate(R.id.action_FirstFragment_to_SecondFragment) } catch (ex: Exception) {}
     }
 
     @Suppress("UNUSED_PARAMETER")
     fun moveToWebPage(pageUrl: String) {
-        println("moveToWebPage $visibleScreen")
-        if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_webViewFragment) }
+        if (visibleScreen != 1) return
+        try { findNavController().navigate(R.id.action_FirstFragment_to_webViewFragment) } catch (ex: Exception) {}
     }
 
     fun moveToAuthPage() {
-        println("moveToAuthPage $visibleScreen")
-        if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_authFragment) }
+        if (visibleScreen != 1) return
+        try { findNavController().navigate(R.id.action_FirstFragment_to_authFragment) } catch (ex: Exception) {}
     }
 
     fun moveToSettingsPage() {
-        println("moveToSettingsPage $visibleScreen")
-        if (visibleScreen == 1) { findNavController().navigate(R.id.action_FirstFragment_to_settingsFragment) }
+        if (visibleScreen != 1) return
+        try { findNavController().navigate(R.id.action_FirstFragment_to_settingsFragment) } catch (ex: Exception) {}
     }
 
     private fun getStringEx(resId: Int) : String {
@@ -115,7 +114,7 @@ class MainFragment : Fragment() {
             }
             view?.findViewById<TextView>(R.id.agentActionButton)?.isEnabled = true
             if (state == 0) {
-                if (g_retryTimer != null) {
+                if (AgentController.isRetrying()) {
                     // Trying to connect
                     view?.findViewById<ImageView>(R.id.mainImageView)?.alpha = 0.5F
                     view?.findViewById<TextView>(R.id.agentStatusTextview)?.text =

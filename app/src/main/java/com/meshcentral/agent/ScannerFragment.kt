@@ -23,7 +23,6 @@ import com.karumi.dexter.listener.PermissionGrantedResponse
 import com.karumi.dexter.listener.PermissionRequest
 import com.karumi.dexter.listener.single.PermissionListener
 import com.google.zxing.BarcodeFormat
-import java.util.jar.Manifest
 
 /**
  * A simple [Fragment] subclass as the second destination in the navigation.
