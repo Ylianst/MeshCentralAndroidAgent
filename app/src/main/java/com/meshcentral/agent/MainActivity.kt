@@ -546,7 +546,7 @@ class MainActivity : AppCompatActivity() {
         if (!ensureAgentIdentity()) return
 
         if (!userInitiated) {
-            meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+            meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!, getMeshServerLinkAgentKey(serverLink))
             meshAgent?.Start()
         } else {
             if (g_autoConnect) {
@@ -554,7 +554,7 @@ class MainActivity : AppCompatActivity() {
                     // We are not trying to connect, switch to connecting
                     g_userDisconnect = false
                     meshAgent =
-                        MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+                        MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!, getMeshServerLinkAgentKey(serverLink))
                     meshAgent?.Start()
                 } else {
                     // We are trying to connect, switch to not trying
@@ -563,7 +563,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 // We are not in auto connect mode, try to connect
                 g_userDisconnect = true
-                meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!)
+                meshAgent = MeshAgent(this, getServerHost()!!, getServerHash()!!, getDevGroup()!!, getMeshServerLinkAgentKey(serverLink))
                 meshAgent?.Start()
             }
         }

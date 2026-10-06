@@ -10,7 +10,25 @@ internal fun isMeshServerLinkValid(value: String): Boolean {
         parts[0].length >= 8 &&
         parts[0].contains('.') &&
         parts[1].length >= 3 &&
-        parts[2].length >= 3
+        parts[2].length >= 3 &&
+        (parts.size < 4 || isAgentKeyValid(parts[3]))
+}
+
+// The server only accepts alpha-numeric agent keys of up to 128 characters.
+internal fun isAgentKeyValid(key: String): Boolean {
+    return key.length in 1..128 && key.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+}
+
+// Optional fourth field of the server link: mc://host,certhash,devgroup,agentkey
+internal fun getMeshServerLinkAgentKey(value: String?): String? {
+    if (value == null) return null
+    val parts = value.split(',')
+    if (parts.size < 4 || !isAgentKeyValid(parts[3])) return null
+    return parts[3]
+}
+
+internal fun getAgentConnectionUrl(host: String, agentKey: String?): String {
+    return if (agentKey == null) "wss://$host/agent.ashx" else "wss://$host/agent.ashx?key=$agentKey"
 }
 
 internal fun isTunnelUsageAllowed(expectedUsage: Int?, actualUsage: Int): Boolean {
