@@ -6,9 +6,10 @@ non-root Android application.
 
 ## Summary
 
-Remote desktop is currently **screen sharing only**. A MeshCentral operator can
-see the device display, but cannot tap, swipe, type, press navigation buttons,
-lock input, or otherwise control the device.
+A MeshCentral operator can see the device display. When the device user has
+enabled the optional Remote Control accessibility service, the operator can also
+tap, swipe, type and navigate (see [Remote control](#remote-control)). Without
+it the session is screen sharing only.
 
 The agent uses Android's public
 [MediaProjection API](https://developer.android.com/media/grow/media-projection)
@@ -106,24 +107,43 @@ restarts.
 
 ## Non-Root Limitations
 
-### No remote input
+### Remote control
 
 Android does not let an ordinary application inject arbitrary touch or keyboard
-events into other applications. The MeshCentral protocol messages for legacy
-keys, mouse input, Unicode keys, pause, refresh, and input lock are recognized
-by `MeshTunnel`, but their handlers intentionally do nothing.
+events into other applications. Remote input therefore goes through
+`RemoteInputService`, an accessibility service that the device user has to
+enable in the Android accessibility settings. The app menu shows "Enable Remote
+Control" while it is off. It does not replace MediaProjection consent, and input
+is only applied while a remote desktop session is open.
 
-The app does not declare an `AccessibilityService`, is not a system-signed app,
-and does not use a rooted input-injection mechanism. As a result, the remote
-desktop is view-only.
+Input is only accepted when the MeshCentral user has the remote control right
+and is not limited to view only.
 
-An accessibility service could implement a limited set of gestures and global
-actions after the device user explicitly enables it in Android settings. That
-would still not be equivalent to root-level input: support varies by Android
-version and device vendor, some screens reject accessibility actions, text and
-key handling are incomplete, and Android displays persistent privacy indicators
-and warnings. Accessibility must not be enabled or treated as a way to bypass
-user consent.
+| Remote input | Action on the device |
+| --- | --- |
+| Left click, drag, long press | Tap, swipe or long press at that position (`dispatchGesture`) |
+| Mouse wheel | Vertical swipe |
+| Right click, Escape | Back |
+| Middle click, Home, Windows key | Home |
+| Arrow keys, Tab | Move the focus like a D-pad, including Leanback lists |
+| Enter, Space | Click the focused item, or Enter in a text field |
+| Typing, Backspace, Delete | Edit the focused text field (`ACTION_SET_TEXT`) |
+| Page up / down | Scroll the focused list |
+| Context menu key, F1, F2 | Recents, notifications, quick settings |
+| Volume and media keys | Volume and media playback |
+
+Limits: accessibility input is not equivalent to root or ADB input. Apps that
+draw their own controls without accessibility nodes (for example the Fire TV
+search keyboard) only react to clicks, not to arrow keys or typing. Secure
+screens such as the lock screen cannot be controlled.
+
+On Fire TV and some Android TV devices the accessibility settings do not list
+third party services. The service can be enabled with ADB instead:
+
+```
+adb shell settings put secure enabled_accessibility_services com.meshcentral.agent2/com.meshcentral.agent.RemoteInputService
+adb shell settings put secure accessibility_enabled 1
+```
 
 ### Protected content may be blank
 
@@ -177,7 +197,7 @@ inspection and support rather than smooth video playback.
 | Multiple viewers | Supported; frames are broadcast to active desktop tunnels | Device and network load |
 | Rotation | Supported by recreating the virtual display | Brief update interruption |
 | Quality and scaling | Supported | Server settings and device cost |
-| Remote tap, swipe, or typing | Not supported | No input implementation or privileged injection access |
+| Remote tap, swipe, or typing | Supported with the Remote Control accessibility service | User must enable the service; custom drawn widgets only take clicks |
 | Secure or DRM content | Not capturable | Android secure-surface policy |
 | Silent capture after restart | Not supported | MediaProjection authorization and lifecycle rules |
 | Hide sharing notification | Not supported | Foreground-service requirement |
@@ -190,7 +210,7 @@ The remote desktop stream is sent through authenticated MeshCentral relay
 tunnels over WebSockets. That transport does not change Android's local trust
 model: pairing a device or granting a MeshCentral user remote-desktop rights
 does not grant the app root, system-signature permissions, MediaProjection
-approval, or input-injection privileges.
+approval, or the accessibility service needed for remote input.
 
 For operation and support, treat the local Android user as the final authority:
 

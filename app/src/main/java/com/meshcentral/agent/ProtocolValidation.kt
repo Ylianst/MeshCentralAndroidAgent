@@ -13,6 +13,12 @@ internal fun isMeshServerLinkValid(value: String): Boolean {
         parts[2].length >= 3
 }
 
+// Remote input needs the remote control right and must not be limited to view only.
+internal fun isRemoteInputAllowed(rights: Long): Boolean {
+    if (rights == 0xFFFFFFFFL) return true
+    return (rights and 0x08L) != 0L && (rights and 0x100L) == 0L
+}
+
 internal fun isTunnelUsageAllowed(expectedUsage: Int?, actualUsage: Int): Boolean {
     return expectedUsage == null || expectedUsage == actualUsage
 }

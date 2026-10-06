@@ -40,4 +40,7 @@
     <string name="clear_server_setup">Server-Setup löschen?</string>
     <string name="server_pairing_link">Server-Kopplungslink</string>
     <string name="invalid_server_pairing_link">Ungültiger Server-Kopplungslink</string>
+    <string name="remote_control">Fernsteuerung</string>
+    <string name="enable_remote_control">Fernsteuerung aktivieren</string>
+    <string name="remote_control_service_description">Erlaubt einem MeshCentral-Administrator, dieses Gerät während einer Remote-Desktop-Sitzung zu bedienen: Klicks und Ziehen werden zu Berührungen, Tasten bewegen den Fokus und schreiben Text. Nur aktiv, solange eine Remote-Desktop-Sitzung mit Steuerrechten offen ist.</string>
 </resources>

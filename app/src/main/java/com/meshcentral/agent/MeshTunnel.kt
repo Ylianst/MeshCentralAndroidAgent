@@ -30,7 +30,6 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
 import kotlin.collections.ArrayList
-import kotlin.math.absoluteValue
 import kotlin.random.Random
 
 
@@ -298,8 +297,9 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
             } else {
                 if (msg.size < 2) return
-                var cmd : Int = (msg[0].toInt() shl 8) + msg[1].toInt()
-                var cmdsize : Int = (msg[2].toInt() shl 8) + msg[3].toInt()
+                if (msg.size < 4) return
+                var cmd : Int = u16(msg, 0)
+                var cmdsize : Int = u16(msg, 2)
                 if (cmdsize != msg.size) return
                 //println("Cmd $cmd, Size: ${msg.size}, Hex: ${msg.toByteArray().toHex()}")
                 if (usage == 2) processBinaryDesktopCmd(cmd, cmdsize, msg) // Remote desktop
@@ -313,17 +313,29 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     private fun processBinaryDesktopCmd(cmd : Int, cmdsize: Int, msg: ByteString) {
         when (cmd) {
             1 -> { // Legacy key input
-                // Nop
+                if (cmdsize < 6 || !isRemoteInputAllowed(serverData.optLong("rights", 0))) return
+                val flags = u8(msg, 4) // 0 = down, 1 = up, 3 = extended up, 4 = extended down
+                g_RemoteInputService?.injectKey(u8(msg, 5), (flags == 0) || (flags == 4))
             }
             2 -> { // Mouse input
-                // Nop
+                if (cmdsize < 10 || !isRemoteInputAllowed(serverData.optLong("rights", 0))) return
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return
+                val input = g_RemoteInputService ?: return
+                val capture = g_ScreenCaptureService ?: return
+                val x = (u16(msg, 6) * 1024) / g_desktop_scalingLevel.coerceAtLeast(1)
+                val y = (u16(msg, 8) * 1024) / g_desktop_scalingLevel.coerceAtLeast(1)
+                if (cmdsize >= 12) {
+                    input.injectWheel(x, y, u16(msg, 10).toShort().toInt(), capture.mWidth, capture.mHeight)
+                } else {
+                    input.injectMouse(u8(msg, 5), x, y, capture.mWidth, capture.mHeight)
+                }
             }
             5 -> { // Remote Desktop Settings
                 if (cmdsize < 6) return
                 g_desktop_imageType = msg[4].toInt() // 1 = JPEG, 2 = PNG, 3 = TIFF, 4 = WebP. TIFF is not support on Android.
                 g_desktop_compressionLevel = msg[5].toInt() // Value from 1 to 100
-                if (cmdsize >= 8) { g_desktop_scalingLevel = (msg[6].toInt() shl 8).absoluteValue + msg[7].toInt().absoluteValue } // 1024 = 100%
-                if (cmdsize >= 10) { g_desktop_frameRateLimiter = (msg[8].toInt() shl 8).absoluteValue + msg[9].toInt().absoluteValue }
+                if (cmdsize >= 8) { g_desktop_scalingLevel = u16(msg, 6) } // 1024 = 100%
+                if (cmdsize >= 10) { g_desktop_frameRateLimiter = u16(msg, 8) }
                 println("Desktop Settings, type=$g_desktop_imageType, comp=$g_desktop_compressionLevel, scale=$g_desktop_scalingLevel, rate=$g_desktop_frameRateLimiter")
                 updateDesktopDisplaySize()
             }
@@ -335,7 +347,8 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 // Nop
             }
             85 -> { // Unicode key input
-                // Nop
+                if (cmdsize < 7 || !isRemoteInputAllowed(serverData.optLong("rights", 0))) return
+                g_RemoteInputService?.injectUnicode(u16(msg, 5), u8(msg, 4) == 0)
             }
             87 -> { // Input Lock
                 // Nop
@@ -345,6 +358,9 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             }
         }
     }
+
+    private fun u8(msg: ByteString, i: Int) : Int = msg[i].toInt() and 0xFF
+    private fun u16(msg: ByteString, i: Int) : Int = (u8(msg, i) shl 8) or u8(msg, i + 1)
 
     fun updateDesktopDisplaySize() {
         if ((g_ScreenCaptureService == null) || (_webSocket == null)) return
