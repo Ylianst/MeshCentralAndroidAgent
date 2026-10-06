@@ -190,11 +190,13 @@ management operations.
 
 ### Pairing and Connection
 
-1. The user supplies an `mc://host,serverHash,deviceGroupId` link.
+1. The user supplies an `mc://host,serverHash,deviceGroupId` link, with an
+   optional fourth field `agentKey` for servers that set `agentKey`.
 2. The link is stored as `qrmsh` in the `meshagent` SharedPreferences file.
 3. On first connection, the app generates an RSA identity certificate and key,
    then stores them as Base64 strings in the same preferences file.
-4. `MeshAgent` connects to `/agent.ashx` and authenticates both sides using the
+4. `MeshAgent` connects to `/agent.ashx` (with `?key=` when the link has an
+   agent key) and authenticates both sides using the
    pairing data, TLS certificate hash, nonces, and signatures.
 5. After authentication, the device reports metadata and waits for commands or
    relay requests.
