@@ -28,6 +28,11 @@
         android:title="@string/stopsharescreen"
         app:showAsAction="never" />
     <item
+        android:id="@+id/action_enable_remote_control"
+        android:orderInCategory="104"
+        android:title="@string/enable_remote_control"
+        app:showAsAction="never" />
+    <item
         android:id="@+id/action_settings"
         android:orderInCategory="107"
         android:title="@string/settings"

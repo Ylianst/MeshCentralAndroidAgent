@@ -22,6 +22,15 @@ class ProtocolValidationTest {
     }
 
     @Test
+    fun checksRemoteInputRights() {
+        assertTrue(isRemoteInputAllowed(0xFFFFFFFFL))
+        assertTrue(isRemoteInputAllowed(0x08L))
+        assertFalse(isRemoteInputAllowed(0x108L))
+        assertFalse(isRemoteInputAllowed(0x00L))
+        assertFalse(isRemoteInputAllowed(0x100L))
+    }
+
+    @Test
     fun acceptsAbsentOrMatchingTunnelUsage() {
         assertTrue(isTunnelUsageAllowed(null, 2))
         assertTrue(isTunnelUsageAllowed(5, 5))

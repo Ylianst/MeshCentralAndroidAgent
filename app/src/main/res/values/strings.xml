@@ -42,4 +42,7 @@
     <string name="clear_server_setup">Clear server setup?</string>
     <string name="server_pairing_link">Server Pairing Link</string>
     <string name="invalid_server_pairing_link">Invalid Server Pairing Link</string>
+    <string name="remote_control">Remote Control</string>
+    <string name="enable_remote_control">Enable Remote Control</string>
+    <string name="remote_control_service_description">Lets a MeshCentral administrator control this device during a remote desktop session: clicks and drags become touches, keys move the focus and type text. Only active while a remote desktop session with control rights is open.</string>
 </resources>

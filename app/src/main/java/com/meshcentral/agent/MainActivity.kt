@@ -240,6 +240,8 @@ class MainActivity : AppCompatActivity() {
         item7.isVisible = false //(visibleScreen == 1) && (serverLink != null);
         var item8 = menu.findItem(R.id.action_settings);
         item8.isVisible = (visibleScreen == 1);
+        var item10 = menu.findItem(R.id.action_enable_remote_control);
+        item10.isVisible = (visibleScreen == 1) && (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) && !RemoteInputService.isEnabled(this)
         var item9 = menu.findItem(R.id.action_enablepushauthentication);
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
             item9.isVisible = (notificationManager.areNotificationsEnabled() == false)
@@ -283,6 +285,15 @@ class MainActivity : AppCompatActivity() {
         if ((item.itemId == R.id.action_manual_setup_server) && (hardCodedServerLink == null)) {
             // Manually setup the server pairing
             promptForServerLink()
+        }
+
+        if (item.itemId == R.id.action_enable_remote_control) {
+            // Remote control needs the accessibility service, which only the user can enable
+            try {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            } catch (ex: Exception) {
+                println("Unable to open accessibility settings: $ex")
+            }
         }
 
         if (item.itemId == R.id.action_testAuth) {

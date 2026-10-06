@@ -15,10 +15,13 @@ authenticated connection to the server and can:
 - Receive server notifications and a limited set of console commands.
 - Approve or reject MeshCentral push-based two-factor authentication requests.
 
-Remote desktop is currently **view only**. The app can stream the display, but
-it cannot tap, swipe, type, or otherwise control the device. Android displays a
-foreground notification while screen sharing is active, and the user can deny
-or stop capture at any time.
+Remote desktop streams the display after the user approves screen capture.
+To also control the device, the user enables the optional "Remote Control"
+accessibility service (menu "Enable Remote Control"). Clicks and drags then
+become touches, keys move the focus and type text. This works on phones,
+tablets, Android TV and Fire TV. Android displays a foreground notification
+while screen sharing is active, and the user can deny or stop capture at any
+time. See [Remote desktop](docs/remote-desktop.md#remote-control).
 
 ## Install
 

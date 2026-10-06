@@ -23,9 +23,9 @@ are:
 - Approving or rejecting MeshCentral push-based two-factor authentication
   requests.
 
-The remote desktop implementation is currently **view only**. Protocol handlers
-for keyboard, mouse, Unicode key, and input-lock messages exist, but they are
-no-ops. This app does not currently provide general remote input control.
+Remote desktop input is handled by `RemoteInputService`, an accessibility
+service the device user has to enable. Without it the remote desktop stays view
+only.
 
 ## Project Snapshot
 
@@ -345,8 +345,9 @@ not a complete security audit:
 - **Storage compatibility:** the code spans legacy filesystem access and scoped
   MediaStore access. Permission and URI behavior varies significantly by Android
   release.
-- **Remote-desktop scope:** display capture is implemented, but remote input is
-  intentionally absent in the current handlers.
+- **Remote-desktop scope:** remote input needs the Remote Control
+  accessibility service and the MeshCentral remote control right. Apps that
+  draw their own widgets without accessibility nodes only react to clicks.
 - **Release signing:** the release build currently uses the debug signing
   configuration. Production release signing should be supplied outside source
   control.
