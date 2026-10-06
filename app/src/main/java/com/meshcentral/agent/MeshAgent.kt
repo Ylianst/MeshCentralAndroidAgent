@@ -470,15 +470,13 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     // User real name and optional image
                     var xuserid: String? = json.optString("userid")
                     var xrealname: String? = json.optString("realname")
-                    var ximage: String? = json.optString("image")
                     var xuserImage: Bitmap? = null
 
-                    if ((ximage != null) && (!ximage.startsWith("data:image/jpeg;base64,"))) {
-                        ximage = null; }
+                    var ximage: String? = getDataUriImagePayload(json.optString("image"))
 
                     if (ximage != null) {
                         try {
-                            val imageBytes = android.util.Base64.decode(ximage.substring(23), 0)
+                            val imageBytes = android.util.Base64.decode(ximage, 0)
                             xuserImage = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 
                             // Round the image edges
@@ -505,13 +503,12 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     // Server title and image
                     serverTitle = json.optString("title")
                     serverSubTitle = json.optString("subtitle")
-                    var ximage: String? = json.optString("image")
-                    if ((ximage != null) && (!ximage.startsWith("data:image/jpeg;base64,"))) { ximage = null; }
+                    var ximage: String? = getDataUriImagePayload(json.optString("image"))
 
                     // Decode the image
                     if (ximage != null) {
                         try {
-                            val imageBytes = android.util.Base64.decode(ximage.substring(23), 0)
+                            val imageBytes = android.util.Base64.decode(ximage, 0)
                             serverImage =
                                 BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
                         } catch (ex: java.lang.Exception) { }
