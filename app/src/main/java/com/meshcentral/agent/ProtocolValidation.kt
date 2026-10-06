@@ -13,6 +13,15 @@ internal fun isMeshServerLinkValid(value: String): Boolean {
         parts[2].length >= 3
 }
 
+// Base64 payload of a "data:image/<type>;base64,..." URI. MeshCentral sends JPEG or PNG
+// user and server images, BitmapFactory decodes either.
+internal fun getDataUriImagePayload(value: String?): String? {
+    if (value == null || !value.startsWith("data:image/")) return null
+    val comma = value.indexOf(',')
+    if (comma < 0 || !value.substring(0, comma).endsWith(";base64")) return null
+    return value.substring(comma + 1).takeIf { it.isNotEmpty() }
+}
+
 internal fun isTunnelUsageAllowed(expectedUsage: Int?, actualUsage: Int): Boolean {
     return expectedUsage == null || expectedUsage == actualUsage
 }

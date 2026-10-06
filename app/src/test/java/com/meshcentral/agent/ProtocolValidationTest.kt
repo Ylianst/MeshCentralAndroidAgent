@@ -22,6 +22,17 @@ class ProtocolValidationTest {
     }
 
     @Test
+    fun extractsJpegAndPngImagePayload() {
+        assertEquals("/9j/4AAQ", getDataUriImagePayload("data:image/jpeg;base64,/9j/4AAQ"))
+        assertEquals("iVBORw0K", getDataUriImagePayload("data:image/png;base64,iVBORw0K"))
+        assertNull(getDataUriImagePayload("data:image/png,iVBORw0K"))
+        assertNull(getDataUriImagePayload("data:text/plain;base64,aGVsbG8="))
+        assertNull(getDataUriImagePayload("data:image/png;base64,"))
+        assertNull(getDataUriImagePayload(""))
+        assertNull(getDataUriImagePayload(null))
+    }
+
+    @Test
     fun acceptsAbsentOrMatchingTunnelUsage() {
         assertTrue(isTunnelUsageAllowed(null, 2))
         assertTrue(isTunnelUsageAllowed(5, 5))
