@@ -60,7 +60,7 @@ class MainFragment : Fragment() {
             var data: Uri? = (activity as MainActivity).intent.data;
             if (data != null && data.isHierarchical()) {
                 var uri: String? = (activity as MainActivity).intent.dataString;
-                if ((uri != null) && isMeshServerLinkValid(uri)) {
+                if ((uri != null) && isMeshServerLinkValid(uri) && !isServerSetupLocked()) {
                     confirmServerSetup(uri)
                 }
             }

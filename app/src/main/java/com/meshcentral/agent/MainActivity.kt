@@ -13,6 +13,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.RestrictionsManager
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -36,6 +37,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
+import androidx.core.content.edit
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 import com.google.firebase.messaging.FirebaseMessaging
@@ -83,6 +85,10 @@ var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivi
 var pushMessagingToken : String? = null
 var g_autoConnect : Boolean = true
 var g_autoConsent : Boolean = false
+internal var g_managedConfig : ManagedConfig? = null
+
+// The server can not be changed by the user when it is hard coded or locked by device management
+fun isServerSetupLocked() : Boolean = (hardCodedServerLink != null) || (g_managedConfig?.lockServer == true)
 var g_userDisconnect : Boolean = false // Indicate user initiated disconnection
 var g_retryTimer: CountDownTimer? = null
 
@@ -199,11 +205,44 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Activate the settings
+        // Apply settings from device management, then activate the settings
+        applyManagedConfig(false)
+        registerReceiver(restrictionsReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED))
         settingsChanged()
         if (g_autoConnect && !g_userDisconnect && (meshAgent == null)) {
             toggleAgentConnection(false)
         }
+    }
+
+    private val restrictionsReceiver: BroadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            applyManagedConfig(true)
+            settingsChanged()
+        }
+    }
+
+    // Read the managed configuration set by an MDM/EMM and apply it over the user settings
+    private fun applyManagedConfig(changed: Boolean) {
+        val restrictionsManager = getSystemService(Context.RESTRICTIONS_SERVICE) as? RestrictionsManager ?: return
+        val bundle = restrictionsManager.applicationRestrictions
+        val values = HashMap<String, Any?>()
+        for (key in bundle.keySet()) {
+            @Suppress("DEPRECATION")
+            values[key] = bundle.get(key)
+        }
+        val config = parseManagedConfig(values)
+        g_managedConfig = config
+
+        val pm: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
+        pm.edit {
+            if (config.autoConnect != null) putBoolean("pref_autoconnect", config.autoConnect)
+            if (config.autoConsent != null) putBoolean("pref_autoconsent", config.autoConsent)
+        }
+
+        if ((config.serverLink != null) && (hardCodedServerLink == null) && (config.serverLink != serverLink)) {
+            storeMeshServerLink(config.serverLink)
+        }
+        if (changed) invalidateOptionsMenu()
     }
 
     private fun sendConsoleMessage(msg: String) {
@@ -224,10 +263,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
         var item1 = menu.findItem(R.id.action_setup_server);
-        item1.isVisible = (visibleScreen == 1) && (hardCodedServerLink == null);
+        item1.isVisible = (visibleScreen == 1) && !isServerSetupLocked();
         item1.isEnabled = cameraPresent;
         var item2 = menu.findItem(R.id.action_clear_server);
-        item2.isVisible = (visibleScreen == 1) && (serverLink != null) && (hardCodedServerLink == null);
+        item2.isVisible = (visibleScreen == 1) && (serverLink != null) && !isServerSetupLocked();
         var item3 = menu.findItem(R.id.action_close);
         item3.isVisible = (visibleScreen != 1);
         var item4 = menu.findItem(R.id.action_sharescreen);
@@ -235,7 +274,7 @@ class MainActivity : AppCompatActivity() {
         var item5 = menu.findItem(R.id.action_stopscreensharing);
         item5.isVisible = (g_ScreenCaptureService != null)
         var item6 = menu.findItem(R.id.action_manual_setup_server);
-        item6.isVisible = (visibleScreen == 1) && (serverLink == null) && (hardCodedServerLink == null)
+        item6.isVisible = (visibleScreen == 1) && (serverLink == null) && !isServerSetupLocked()
         var item7 = menu.findItem(R.id.action_testAuth);
         item7.isVisible = false //(visibleScreen == 1) && (serverLink != null);
         var item8 = menu.findItem(R.id.action_settings);
@@ -255,12 +294,12 @@ class MainActivity : AppCompatActivity() {
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
 
-        if ((item.itemId == R.id.action_setup_server) && (hardCodedServerLink == null)) {
+        if ((item.itemId == R.id.action_setup_server) && !isServerSetupLocked()) {
             // Move to QR code reader if a camera is present
             if ((mainFragment != null) && cameraPresent) mainFragment?.moveToScanner()
         }
 
-        if ((item.itemId == R.id.action_clear_server) && (hardCodedServerLink == null)) {
+        if ((item.itemId == R.id.action_clear_server) && !isServerSetupLocked()) {
             // Remove the server
             confirmServerClear()
         }
@@ -280,7 +319,7 @@ class MainActivity : AppCompatActivity() {
             stopProjection()
         }
 
-        if ((item.itemId == R.id.action_manual_setup_server) && (hardCodedServerLink == null)) {
+        if ((item.itemId == R.id.action_manual_setup_server) && !isServerSetupLocked()) {
             // Manually setup the server pairing
             promptForServerLink()
         }
@@ -310,6 +349,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         unregisterReceiver(batteryInfoReceiver)
+        unregisterReceiver(restrictionsReceiver)
         if (g_mainActivity === this) g_mainActivity = null
         if (alert != null) {
             alert?.dismiss()
@@ -338,7 +378,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun setMeshServerLink(x: String?) {
-        if ((serverLink == x) || (hardCodedServerLink != null)) return
+        if ((serverLink == x) || isServerSetupLocked()) return
+        storeMeshServerLink(x)
+    }
+
+    private fun storeMeshServerLink(x: String?) {
         if (meshAgent != null) { // Stop the agent
             meshAgent?.Stop()
             meshAgent = null
@@ -397,7 +441,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun confirmServerClear() {
-        if (hardCodedServerLink != null) return
+        if (isServerSetupLocked()) return
         if (alert != null) {
             alert?.dismiss()
             alert = null
@@ -663,7 +707,7 @@ class MainActivity : AppCompatActivity() {
 
     // Show alert asking for server pairing link
     fun promptForServerLink() {
-        if (hardCodedServerLink != null) return
+        if (isServerSetupLocked()) return
         val builder: AlertDialog.Builder = AlertDialog.Builder(this)
         builder.setTitle(getString(R.string.server_pairing_link))
 

@@ -42,4 +42,11 @@
     <string name="clear_server_setup">Clear server setup?</string>
     <string name="server_pairing_link">Server Pairing Link</string>
     <string name="invalid_server_pairing_link">Invalid Server Pairing Link</string>
+    <string name="managed_server_link_title">Server pairing link</string>
+    <string name="managed_server_link_description">mc:// pairing link of the MeshCentral server. When set, the agent pairs with this server.</string>
+    <string name="managed_auto_connect_description">Connect automatically when the app starts and keep reconnecting.</string>
+    <string name="managed_auto_consent_description">Grant remote desktop consent automatically, without asking the user.</string>
+    <string name="managed_lock_server_title">Lock server setup</string>
+    <string name="managed_lock_server_description">Hide the options to scan, enter or clear the server so the user cannot change it.</string>
+    <string name="managed_by_organization">Managed by your organization</string>
 </resources>

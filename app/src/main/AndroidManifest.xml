@@ -28,6 +28,9 @@
         <!-- <activity android:name=".SettingsActivity" android:label="@string/title_activity_settings"></activity> -->
 
         <meta-data
+            android:name="android.content.APP_RESTRICTIONS"
+            android:resource="@xml/app_restrictions" />
+        <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="@string/default_notification_channel_id" />
 
