@@ -39,9 +39,18 @@ mc://<server-host>,<server-identity-hash>,<device-group-id>
   verify the server during the handshake.
 - `<device-group-id>` is the mesh/device group the device enrolls into.
 
-The agent also generates its own 2048-bit RSA key pair and a self-signed X.509
-certificate at first run. This is the device identity used to sign the
-handshake.
+Before connecting, the app loads its identity from Android Keystore under the
+`meshcentral-agent-identity` alias. New installations generate a 2048-bit RSA
+key pair and a self-signed X.509 certificate there.
+
+For older installations, the app imports the existing `agentCert` and `agentKey`
+values from the `meshagent` preferences. It preserves the certificate and key,
+then removes those preference entries after loading the identity successfully.
+A failure prevents connection and displays an error. The pairing link remains
+in SharedPreferences as `qrmsh`.
+
+This identity signs the agent handshake. It is separate from the keystore used
+to sign the APK for distribution.
 
 ## Control Channel Handshake
 

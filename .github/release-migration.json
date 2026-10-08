@@ -1,0 +1,16 @@
+{
+  "legacy": {
+    "tag": "legacy-1.2.6",
+    "sourceRepository": "Ylianst/MeshCentral",
+    "sourceCommit": "029b7338ecfeeacc65da3b5a1a4cc069baeb2f65",
+    "sourceDirectory": "agents",
+    "files": [
+      {
+        "filename": "meshagent_android.apk",
+        "asset": "meshagent_android.apk",
+        "size": 9236275,
+        "sha384": "ea7326b88caa67f16a5a028b35a9d5b2d05fd085e248d08841150560443c5e8bc51fe0751b6c0576b9465653d5f26940"
+      }
+    ]
+  }
+}
