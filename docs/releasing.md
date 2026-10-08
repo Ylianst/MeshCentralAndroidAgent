@@ -98,13 +98,12 @@ The **Android Release** workflow then:
 1. Builds the release APK and AAB.
 2. Confirms that the tag matches the built application's `versionName`.
 3. Creates a draft release using the repository's `GITHUB_TOKEN`.
-4. Attaches the versioned APK and AAB, `meshagent_android.apk`, and
-   `agent-release.json`.
+4. Attaches the versioned APK and AAB, and `meshagent_android.apk`.
 
-The manifest records the repository, tag, source commit, byte length and
-full-file SHA384 of the signed APK. The fixed `meshagent_android.apk` filename
-lets MeshCentral download the selected release without depending on the
-versioned filename.
+The fixed `meshagent_android.apk` filename lets MeshCentral download the
+selected release without depending on the versioned filename. MeshCentral
+verifies it against the SHA384 pinned in its default manifest, or against the
+SHA256 digest GitHub records for the asset when it is imported.
 
 MeshCentral uses this APK for its Android installer download. Android app updates
 use Google Play or APK installation; the native agent binary-update and
@@ -146,5 +145,5 @@ Android signing secrets are required for this migration.
 
 Publish this draft before a MeshCentral package that uses it as a default.
 Leave it excluded from GitHub's latest-release selection. The migration tag
-identifies the packaging commit; the manifest records the source repository,
-archive commit and original path of the preserved APK.
+identifies the packaging commit; `.github/release-migration.json` records the
+source repository, archive commit and original path of the preserved APK.
