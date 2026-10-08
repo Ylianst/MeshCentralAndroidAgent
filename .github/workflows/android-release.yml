@@ -3,7 +3,7 @@ name: Android Release
 on:
   push:
     tags:
-      - "*.*.*"
+      - "[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
 
 permissions:
@@ -26,10 +26,6 @@ jobs:
 
       - name: Check out source
         uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '24'
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -89,10 +85,8 @@ jobs:
         env:
           APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          mkdir release manifest
-          cp app/build/outputs/apk/release/app-release.apk manifest/meshagent_android.apk
-          node .github/scripts/agent-release.js manifest "$GITHUB_REPOSITORY" "$APP_VERSION" manifest
-          cp manifest/* release/
+          mkdir release
+          cp app/build/outputs/apk/release/app-release.apk release/meshagent_android.apk
           cp app/build/outputs/apk/release/app-release.apk "release/MeshCentral-Agent-${APP_VERSION}.apk"
           cp app/build/outputs/bundle/release/app-release.aab "release/MeshCentral-Agent-${APP_VERSION}.aab"
 
