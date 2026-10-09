@@ -40,4 +40,11 @@
     <string name="clear_server_setup">Server-Setup löschen?</string>
     <string name="server_pairing_link">Server-Kopplungslink</string>
     <string name="invalid_server_pairing_link">Ungültiger Server-Kopplungslink</string>
+    <string name="managed_server_link_title">Server-Kopplungslink</string>
+    <string name="managed_server_link_description">mc://-Kopplungslink des MeshCentral-Servers. Wenn gesetzt, koppelt sich der Agent mit diesem Server.</string>
+    <string name="managed_auto_connect_description">Beim Start der App automatisch verbinden und die Verbindung wiederherstellen.</string>
+    <string name="managed_auto_consent_description">Zustimmung für Remote-Desktop automatisch erteilen, ohne den Benutzer zu fragen.</string>
+    <string name="managed_lock_server_title">Server-Setup sperren</string>
+    <string name="managed_lock_server_description">Blendet Scannen, Eingeben und Löschen des Servers aus, damit der Benutzer ihn nicht ändern kann.</string>
+    <string name="managed_by_organization">Von deiner Organisation verwaltet</string>
 </resources>

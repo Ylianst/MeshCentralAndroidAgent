@@ -206,6 +206,22 @@ management operations.
 The build also supports a source-level `hardCodedServerLink`. When populated,
 users cannot replace or clear the configured server.
 
+### Managed Configuration
+
+Devices enrolled in an MDM/EMM can be preconfigured through Android managed
+configurations (`res/xml/app_restrictions.xml`, read in `MainActivity`):
+
+| Key | Type | Effect |
+| --- | --- | --- |
+| `server_link` | string | `mc://` pairing link, applied like a scanned QR code |
+| `auto_connect` | bool | Overrides the Automatic Connection setting |
+| `auto_consent` | bool | Overrides the Automatic Consent setting |
+| `lock_server` | bool | Hides scan, manual entry and clear server in the menu |
+
+Values are applied at start and again when the MDM changes them. Settings that
+are managed are greyed out in the settings screen. Keys that are not set leave
+the user's choice alone, an invalid `server_link` is ignored.
+
 ### Remote Desktop
 
 1. The server asks the control channel to create a relay tunnel.
