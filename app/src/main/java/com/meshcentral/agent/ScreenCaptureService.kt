@@ -518,16 +518,17 @@ class ScreenCaptureService : Service() {
     }
 
     fun checkNoMoreDesktopTunnels() {
-        if (meshAgent == null) return;
+        val agent = meshAgent ?: return
         var desktopTunnelCloud = 0
-        for (t in meshAgent!!.tunnels) {
+        for (t in agent.tunnels) {
             // If this is a connected desktop tunnel, count it
             if ((t.state == 2) && (t.usage == 2)) { desktopTunnelCloud++ }
         }
         if (desktopTunnelCloud == 0) {
             // If there are no more desktop tunnels, stop projection
             if (!g_autoConsent) {
-                g_mainActivity!!.stopProjection()
+                // The activity may already be gone when a tunnel drops in the background
+                startService(getStopIntent(this))
             } else { // reset the tilesFullWide and tilesFullHigh so on next connect it will send the whole image rather than changed tiles
                 tilesFullWide = 0
                 tilesFullHigh = 0
