@@ -82,7 +82,7 @@ var cameraPresent : Boolean = false
 var pendingActivities : ArrayList<PendingActivityData> = ArrayList<PendingActivityData>()
 var pushMessagingToken : String? = null
 var g_autoConnect : Boolean = true
-var g_autoConsent : Boolean = false
+var g_autoConsent : Boolean = true
 var g_userDisconnect : Boolean = false // Indicate user initiated disconnection
 var g_retryTimer: CountDownTimer? = null
 
@@ -712,8 +712,10 @@ class MainActivity : AppCompatActivity() {
     fun settingsChanged() {
         this.runOnUiThread {
             val pm: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(this)
-            g_autoConnect = pm.getBoolean("pref_autoconnect", false)
-            g_autoConsent = pm.getBoolean("pref_autoconsent", false)
+            // Defaults ON for an owner-managed remote device: auto-connect and persist the
+            // screen-capture grant so the device is reachable/controllable without repeated taps.
+            g_autoConnect = pm.getBoolean("pref_autoconnect", true)
+            g_autoConsent = pm.getBoolean("pref_autoconsent", true)
             g_userDisconnect = false
             if (g_autoConnect == false) {
                 if (g_retryTimer != null) {

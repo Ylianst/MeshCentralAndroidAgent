@@ -42,4 +42,12 @@
     <string name="clear_server_setup">Clear server setup?</string>
     <string name="server_pairing_link">Server Pairing Link</string>
     <string name="invalid_server_pairing_link">Invalid Server Pairing Link</string>
+    <!-- Full-privilege agent add-on -->
+    <string name="mesh_admin_label" translatable="false">MeshCentral Agent</string>
+    <string name="mesh_admin_description">Allows this owner-managed device to be administered remotely (lock, wipe, and policy enforcement).</string>
+    <string name="mesh_input_label">MeshCentral Remote Input</string>
+    <string name="mesh_input_description">Lets the MeshCentral agent replay remote taps, swipes, scrolling, and text on this device during a remote-control session.</string>
+    <string name="mesh_fgs_channel">Remote administration</string>
+    <string name="mesh_fgs_title">MeshCentral agent active</string>
+    <string name="mesh_fgs_text">This device is being managed remotely by its owner.</string>
 </resources>

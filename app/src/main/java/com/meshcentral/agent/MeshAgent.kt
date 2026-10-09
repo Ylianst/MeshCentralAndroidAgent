@@ -86,11 +86,19 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         //println("MeshAgent Stop")
         stopSocket()
         UpdateState(0) // Switch to disconnected
+        // Explicit disconnect / app close -> drop the keep-alive service too.
+        try { MeshRelayForegroundService.stop(parent) } catch (_: Exception) {}
     }
 
     fun UpdateState(newState: Int) {
         if (newState != state) {
             state = newState
+            // Once fully connected, start the keep-alive foreground service (+ wake-lock) so
+            // the connection survives screen-lock / doze. Started while the app is foreground,
+            // it keeps running afterwards; the socket then reconnects inside the live process.
+            if (newState == 3) {
+                try { MeshRelayForegroundService.start(parent) } catch (_: Exception) {}
+            }
             parent.agentStateChanged()
         }
     }

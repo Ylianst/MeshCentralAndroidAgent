@@ -188,6 +188,13 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             if ((text == "c") || (text == "cr")) { state = 1; }
             return
         }
+        // Files (and other JSON) commands may arrive as TEXT frames (some clients send
+        // jsonEncode() as a string rather than bytes). Once the tunnel is up, route any
+        // JSON text frame through the same handler as binary '{...}' frames.
+        if ((state == 2) && text.startsWith("{")) {
+            try { processTunnelData(text) } catch (e: Exception) { println("Tunnel-textJson: ${e}") }
+            return
+        }
         else if (state == 1) {
             // {"type":"options","file":"Images/1104105516.JPG"}
             if (text.startsWith('{')) {
@@ -312,11 +319,26 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
 
     private fun processBinaryDesktopCmd(cmd : Int, cmdsize: Int, msg: ByteString) {
         when (cmd) {
-            1 -> { // Legacy key input
-                // Nop
+            1 -> { // Legacy key input (Windows VK). size 6: [4]=action [5]=vk
+                if (cmdsize >= 6) {
+                    val action = msg[4].toInt() and 0xFF
+                    val vk = msg[5].toInt() and 0xFF
+                    RemoteInputController.get(parent.parent).onKeyLegacy(action, vk)
+                }
             }
-            2 -> { // Mouse input
-                // Nop
+            2 -> { // Mouse input. size 10: [5]=button [6..7]=x [8..9]=y ; size 12 adds wheel [10..11]
+                if (cmdsize >= 10) {
+                    val button = msg[5].toInt() and 0xFF
+                    val x = ((msg[6].toInt() and 0xFF) shl 8) or (msg[7].toInt() and 0xFF)
+                    val y = ((msg[8].toInt() and 0xFF) shl 8) or (msg[9].toInt() and 0xFF)
+                    val ctrl = RemoteInputController.get(parent.parent)
+                    if (cmdsize >= 12) {
+                        val wheel = ((msg[10].toInt() and 0xFF) shl 8) or (msg[11].toInt() and 0xFF)
+                        ctrl.onScroll(x, y, wheel)
+                    } else {
+                        ctrl.onMouse(button, x, y)
+                    }
+                }
             }
             5 -> { // Remote Desktop Settings
                 if (cmdsize < 6) return
@@ -334,8 +356,12 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             8 -> { // Pause
                 // Nop
             }
-            85 -> { // Unicode key input
-                // Nop
+            85 -> { // Unicode key input. size 7: [4]=action [5..6]=unicode
+                if (cmdsize >= 7) {
+                    val action = msg[4].toInt() and 0xFF
+                    val code = ((msg[5].toInt() and 0xFF) shl 8) or (msg[6].toInt() and 0xFF)
+                    RemoteInputController.get(parent.parent).onKeyUnicode(action, code)
+                }
             }
             87 -> { // Input Lock
                 // Nop
@@ -359,6 +385,10 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
             mWidth = (mWidth * g_desktop_scalingLevel) / 1024
             mHeight = (mHeight * g_desktop_scalingLevel) / 1024
         }
+
+        // Tell the input controller the coordinate space the viewer will use (the size we
+        // are about to advertise), so remote taps map back to device pixels.
+        RemoteInputController.get(parent.parent).setRemoteSize(mWidth, mHeight)
 
         // Send the display size command
         var bytesOut = ByteArrayOutputStream()

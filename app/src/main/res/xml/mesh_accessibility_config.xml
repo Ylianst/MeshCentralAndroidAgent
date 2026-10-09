@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Accessibility config for MeshInputAccessibilityService.
+     canPerformGestures=true is what allows dispatchGesture() to inject taps/swipes.
+     flagRequestFilterKeyEvents lets us observe hardware key events if ever needed.
+     We listen to all windows so we can find the focused editable node for text input. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewFocused"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagRequestFilterKeyEvents|flagReportViewIds"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
+    android:canRequestFilterKeyEvents="true"
+    android:notificationTimeout="50"
+    android:description="@string/mesh_input_description" />
