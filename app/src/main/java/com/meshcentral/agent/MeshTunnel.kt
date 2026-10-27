@@ -1,6 +1,7 @@
 package com.meshcentral.agent
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.app.RecoverableSecurityException
 import android.content.ContentResolver
 import android.content.ContentUris
@@ -24,6 +25,7 @@ import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.util.*
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
@@ -63,6 +65,15 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     var guestname : String? = null
     var sessionUserName : String? = null // UserID + GuestName in Base64 if this is a shared session.
     var sessionUserName2 : String? = null // UserID/GuestName
+
+    private val authorization = SessionAuthorization()
+    private val fileExecutor = Executors.newSingleThreadExecutor()
+    private val fileCommands = ConsentCommandQueue(fileExecutor, onError = { stopSocket() })
+    private var consentDialog: AlertDialog? = null
+    private var consentTimer: CountDownTimer? = null
+    private var desktopSettings: ByteString? = null
+    val isSessionAuthorized: Boolean get() = state == 2 && authorization.isApproved
+    val isDesktopAuthorized: Boolean get() = usage == 2 && isSessionAuthorized
 
     init { }
 
@@ -142,6 +153,18 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     fun stopSocket() {
+        if (!authorization.close()) return
+        state = 0
+        parent.parent.runOnUiThread {
+            consentTimer?.cancel()
+            consentDialog?.dismiss()
+            consentDialog = null
+        }
+        fileCommands.close {
+            try { fileUpload?.close() } catch (ex: Exception) { }
+            fileUpload = null
+            fileExecutor.shutdown()
+        }
         // Disconnect and clean the relay socket
         if (_webSocket != null) {
             try {
@@ -183,85 +206,120 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-        //println("Tunnel-onMessage: $text")
+        if (authorization.isClosed) return
         if (state == 0) {
-            if ((text == "c") || (text == "cr")) { state = 1; }
+            if ((text == "c") || (text == "cr")) { state = 1 }
             return
         }
-        else if (state == 1) {
-            // {"type":"options","file":"Images/1104105516.JPG"}
+        if (state != 1) return
+        try {
             if (text.startsWith('{')) {
-                var json = JSONObject(text)
-                var type = json.optString("type")
-                if (type == "options") { tunnelOptions = json }
-            } else {
-                var xusage = text.toInt()
-                if (((xusage < 1) || (xusage > 5)) && (xusage != 10)) {
-                    println("Invalid usage $text"); stopSocket(); return
-                }
-                val serverExpectedUsage = if (serverData.has("usage")) serverData.getInt("usage") else null
-                if (!isTunnelUsageAllowed(serverExpectedUsage, xusage)) {
-                    println("Unexpected usage $text != $serverExpectedUsage");
-                    stopSocket(); return
-                }
-                usage = xusage; // 2 = Desktop, 5 = Files, 10 = File transfer
-                state = 2
+                val json = JSONObject(text)
+                if (json.optString("type") == "options") { tunnelOptions = json }
+                return
+            }
+            val xusage = text.toIntOrNull() ?: run { stopSocket(); return }
+            val options = serverData.optJSONObject("soptions")
+            val allowedUsages = if (options?.has("usages") == true) {
+                val list = options.optJSONArray("usages") ?: run { stopSocket(); return }
+                List(list.length()) { list.getInt(it) }
+            } else null
+            if (!isTunnelUsageAllowed(allowedUsages, xusage) || !tunnelRightsAllow(serverData.optLong("rights", 0), xusage)) {
+                stopSocket(); return
+            }
+            usage = xusage
+            val promptBit = if (usage == 2) 8 else 32
+            authorization.begin(!g_autoConsent || (serverData.optInt("consent", 0) and promptBit) != 0)
+            state = 2
+            if (usage != 10) startConnectionTimer()
+            if (authorization.isPending) requestConsent() else sessionAuthorized()
+        } catch (ex: Exception) { stopSocket() }
+    }
 
-                // Start the connection time except if this is a file transfer
-                if (usage != 10) {
-                    //println("Connected usage $usage")
-                    startConnectionTimer()
-                    if (usage == 2) {
-                        // If this is a remote desktop usage...
-                        if (!g_autoConsent && g_ScreenCaptureService == null) {
-                            // asking for consent
-                            if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                                val json = JSONObject()
-                                json.put("type", "console")
-                                json.put("msg", "Waiting for user to grant access...")
-                                json.put("msgid", 1)
-                                meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                            }
-                        }
-                        if (g_ScreenCaptureService == null) {
-                            // Request media projection
-                            parent.parent.startProjection()
-                        } else {
-                            if (meshAgent?.tunnels?.getOrNull(0) != null) {
-                                val json = JSONObject()
-                                json.put("type", "console")
-                                json.put("msg", null)
-                                json.put("msgid", 0)
-                                meshAgent!!.tunnels[0].sendCtrlResponse(json)
-                            }
-                            // Send the display size
-                            updateDesktopDisplaySize()
-                        }
+    private fun requestConsent() {
+        sendCtrlResponse(JSONObject().put("type", "console").put("msg", "Waiting for user to grant access...").put("msgid", 1))
+        parent.parent.runOnUiThread {
+            if (!authorization.isPending) return@runOnUiThread
+            val activity = parent.parent
+            if (activity.isFinishing || activity.isDestroyed) { stopSocket(); return@runOnUiThread }
+            val options = serverData.optJSONObject("soptions")
+            val username = serverData.optString("username")
+            val realname = serverData.optString("realname").ifEmpty { username }
+            val key = if (usage == 2) "consentMsgDesktop" else "consentMsgFiles"
+            val message = options?.optString(key, "").orEmpty().ifEmpty {
+                activity.getString(if (usage == 2) R.string.desktop_consent_message else R.string.files_consent_message, realname)
+            }.replace("{0}", realname).replace("{1}", username)
+            try {
+                consentDialog = AlertDialog.Builder(activity)
+                    .setTitle(options?.optString("consentTitle", "MeshCentral") ?: "MeshCentral")
+                    .setMessage(message)
+                    .setPositiveButton(R.string.accept) { _, _ -> approveConsent() }
+                    .setNegativeButton(R.string.reject) { _, _ -> denyConsent() }
+                    .setOnCancelListener { denyConsent() }
+                    .show()
+                val seconds = (options?.optInt("consentTimeout", 30) ?: 30).takeIf { it > 0 } ?: 30
+                consentTimer = object : CountDownTimer(seconds.toLong() * 1000, 1000) {
+                    override fun onTick(millisUntilFinished: Long) { }
+                    override fun onFinish() {
+                        if (options?.optBoolean("consentAutoAccept", false) == true) approveConsent() else denyConsent()
                     }
-                } else {
-                    // This is a file transfer
-                    if (tunnelOptions == null) {
-                        println("No file transfer options");
-                        stopSocket();
-                    } else {
-                        var filename = tunnelOptions?.optString("file")
-                        if (filename == null) {
-                            println("No file transfer name");
-                            stopSocket();
-                        } else {
-                            //println("File transfer usage")
-                            startFileTransfer(filename)
-                        }
-                    }
-                }
+                }.start()
+            } catch (ex: Exception) { stopSocket() }
+        }
+    }
+
+    fun approveConsent() {
+        if (!authorization.approve()) return
+        parent.parent.runOnUiThread {
+            consentTimer?.cancel()
+            consentDialog?.dismiss()
+            consentDialog = null
+        }
+        sessionAuthorized()
+    }
+
+    fun denyConsent() {
+        if (!authorization.isPending) return
+        sendCtrlResponse(JSONObject().put("type", "console").put("msg", "denied").put("msgid", 2))
+        stopSocket()
+    }
+
+    private fun sessionAuthorized() {
+        if (!isSessionAuthorized) return
+        sendCtrlResponse(JSONObject().put("type", "console").put("msg", JSONObject.NULL).put("msgid", 0))
+        if (usage == 2) {
+            parent.parent.runOnUiThread {
+                if (!isDesktopAuthorized) return@runOnUiThread
+                if (g_ScreenCaptureService == null) parent.parent.startProjection() else updateDesktopDisplaySize()
+                desktopSettings?.let { processBinaryDesktopCmd(5, it.size, it) }
+            }
+        } else {
+            fileCommands.approve()
+            if (usage == 10) {
+                val filename = tunnelOptions?.optString("file")
+                if (filename.isNullOrEmpty()) { stopSocket(); return }
+                if (!fileCommands.submit { if (isSessionAuthorized) startFileTransfer(filename) }) stopSocket()
             }
         }
     }
 
     @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun onMessage(webSocket: WebSocket, msg: ByteString) {
-        //println("Tunnel-onBinaryMessage: ${msg.size}, ${msg.toByteArray().toHex()}")
-        if ((state != 2) || (msg.size < 2)) return;
+        if (state != 2 || msg.size == 0) return
+        if (usage == 5) {
+            if (msg.size > 1048576 || !fileCommands.submit { processFilePacket(msg) }) stopSocket()
+            return
+        }
+        if (usage != 2 || msg.size < 4) return
+        val cmd = ((msg[0].toInt() and 0xff) shl 8) or (msg[1].toInt() and 0xff)
+        val size = ((msg[2].toInt() and 0xff) shl 8) or (msg[3].toInt() and 0xff)
+        if (size != msg.size) return
+        if (cmd == 5) desktopSettings = msg
+        if (isDesktopAuthorized) processBinaryDesktopCmd(cmd, size, msg)
+    }
+
+    private fun processFilePacket(msg: ByteString) {
+        if (usage != 5 || !isSessionAuthorized) return
         try {
             if (msg[0].toInt() == 123) {
                 // If we are authenticated, process JSON data
@@ -296,13 +354,6 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
                 json.put("action", "uploadack")
                 json.put("reqid", fileUploadReqId)
                 if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
-            } else {
-                if (msg.size < 2) return
-                var cmd : Int = (msg[0].toInt() shl 8) + msg[1].toInt()
-                var cmdsize : Int = (msg[2].toInt() shl 8) + msg[3].toInt()
-                if (cmdsize != msg.size) return
-                //println("Cmd $cmd, Size: ${msg.size}, Hex: ${msg.toByteArray().toHex()}")
-                if (usage == 2) processBinaryDesktopCmd(cmd, cmdsize, msg) // Remote desktop
             }
         }
         catch (e: Exception) {
@@ -347,7 +398,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     fun updateDesktopDisplaySize() {
-        if ((g_ScreenCaptureService == null) || (_webSocket == null)) return
+        if (!isDesktopAuthorized || (g_ScreenCaptureService == null) || (_webSocket == null)) return
         //println("updateDesktopDisplaySize: ${g_ScreenCaptureService!!.mWidth} x ${g_ScreenCaptureService!!.mHeight}")
 
         // Get the display size
@@ -376,6 +427,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     // Cause some data to be sent over the websocket control channel every 2 minutes to keep it open
     private fun startConnectionTimer() {
         parent.parent.runOnUiThread {
+            if (authorization.isClosed) return@runOnUiThread
             connectionTimer = object: CountDownTimer(120000000, 120000) {
                 override fun onTick(millisUntilFinished: Long) {
                     if (_webSocket != null) {
@@ -399,6 +451,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     private fun processTunnelData(jsonStr: String) {
+        if (usage != 5 || !isSessionAuthorized) return
         //println("JSON: $jsonStr")
         val json = JSONObject(jsonStr)
         var action = json.getString("action")
@@ -701,6 +754,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     fun deleteFileEx(pad: PendingActivityData) {
+        if (usage != 5 || !isSessionAuthorized) return
         try {
             parent.parent.contentResolver.delete(pad.url, pad.where, arrayOf(pad.args))
             fileDeleteResponse(pad.req, true) // Send success
@@ -710,6 +764,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     fun startFileTransfer(filename: String) {
+        if (usage != 10 || !isSessionAuthorized) return
         var filenameSplit = filename.split('/')
         //println("startFileTransfer: $filenameSplit")
 
@@ -835,6 +890,7 @@ class MeshTunnel(parent: MeshAgent, url: String, serverData: JSONObject) : WebSo
     }
 
     fun fileDeleteResponse(req: JSONObject, success: Boolean) {
+        if (usage != 5 || !isSessionAuthorized) return
         val json = JSONObject()
         json.put("action", "rm")
         json.put("reqid", req.getString("reqid"))

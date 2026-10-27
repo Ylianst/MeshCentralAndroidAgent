@@ -42,4 +42,6 @@
     <string name="clear_server_setup">Clear server setup?</string>
     <string name="server_pairing_link">Server Pairing Link</string>
     <string name="invalid_server_pairing_link">Invalid Server Pairing Link</string>
+    <string name="desktop_consent_message">%1$s is requesting remote desktop access. Grant access?</string>
+    <string name="files_consent_message">%1$s is requesting remote file access. Grant access?</string>
 </resources>

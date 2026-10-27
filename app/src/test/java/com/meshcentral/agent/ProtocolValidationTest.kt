@@ -24,12 +24,12 @@ class ProtocolValidationTest {
     @Test
     fun acceptsAbsentOrMatchingTunnelUsage() {
         assertTrue(isTunnelUsageAllowed(null, 2))
-        assertTrue(isTunnelUsageAllowed(5, 5))
+        assertTrue(isTunnelUsageAllowed(listOf(5), 5))
     }
 
     @Test
     fun rejectsMismatchedTunnelUsage() {
-        assertFalse(isTunnelUsageAllowed(2, 5))
+        assertFalse(isTunnelUsageAllowed(listOf(2), 5))
     }
 
     @Test

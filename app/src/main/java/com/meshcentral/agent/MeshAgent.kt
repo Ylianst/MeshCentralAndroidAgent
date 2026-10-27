@@ -27,6 +27,7 @@ import java.security.cert.CertificateFactory
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPublicKey
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
@@ -65,7 +66,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     private var connectionTimer: CountDownTimer? = null
     private var lastBattState : JSONObject? = null
     private var lastNetInfo : String? = null
-    var tunnels : ArrayList<MeshTunnel> = ArrayList()
+    val tunnels : MutableList<MeshTunnel> = CopyOnWriteArrayList()
     var userinfo : HashMap<String, MeshUserInfo> = HashMap() // UserID -> MeshUserInfo
 
     init {
@@ -391,24 +392,14 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     sendNetworkUpdate(true)
                 }
                 "openUrl" -> {
-                    /*
-                    if (visibleScreen != 2) { // Device is busy in QR code scanner
-                        // Open the URL
-                        var xurl = json.optString("url")
-                        //println("Opening: $xurl")
-                        if ((xurl != null) && (parent.openUrl(xurl))) {
-                            // Event to the server
-                            var eventArgs = JSONArray()
-                            eventArgs.put(xurl)
-                            logServerEventEx(20, eventArgs, "Opening: ${xurl}", json);
+                    val xurl = json.optString("url")
+                    if (xurl.startsWith("https://") || xurl.startsWith("http://")) {
+                        try {
+                            parent.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(xurl)))
+                            logServerEventEx(20, JSONArray().put(xurl), "Opening: $xurl", json)
+                        } catch (ex: Exception) {
+                            println("openUrl failed: $ex")
                         }
-                    }
-                    */
-
-                    var xurl = json.optString("url")
-                    if (xurl.isNotEmpty()) {
-                        var getintent: Intent = Intent(Intent.ACTION_VIEW, Uri.parse(xurl));
-                        parent.startActivity(getintent);
                     }
                 }
                 "msg" -> {
@@ -729,11 +720,11 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     }
 
     private fun processConsoleMessage(cmdLine: String, sessionid: String, jsoncmd: JSONObject) {
-        //println("Console: $cmdLine")
+        if (!consoleRightsAllow(jsoncmd.optLong("rights", 0))) return
 
         // Parse the incoming console command
         var splitCmd = parseArgString(cmdLine)
-        var cmd = splitCmd[0]
+        var cmd = splitCmd.firstOrNull() ?: return
         var r : String? = null
         if (cmd == "") return
 

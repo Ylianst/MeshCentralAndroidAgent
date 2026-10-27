@@ -13,8 +13,21 @@ internal fun isMeshServerLinkValid(value: String): Boolean {
         parts[2].length >= 3
 }
 
-internal fun isTunnelUsageAllowed(expectedUsage: Int?, actualUsage: Int): Boolean {
-    return expectedUsage == null || expectedUsage == actualUsage
+internal fun isTunnelUsageAllowed(allowedUsages: List<Int>?, actualUsage: Int): Boolean {
+    return allowedUsages == null || allowedUsages.contains(actualUsage)
+}
+
+internal fun tunnelRightsAllow(rights: Long, usage: Int): Boolean {
+    if (rights < 0 || rights > 0xffffffffL) return false
+    return when (usage) {
+        2 -> (rights and (8L or 256L)) != 0L && (rights == 0xffffffffL || (rights and 65536L) == 0L)
+        5, 10 -> (rights and 8L) != 0L && (rights == 0xffffffffL || (rights and 1024L) == 0L)
+        else -> false
+    }
+}
+
+internal fun consoleRightsAllow(rights: Long): Boolean {
+    return rights in 0..0xffffffffL && (rights and 24L) == 24L
 }
 
 internal fun isSafeFileName(name: String): Boolean {

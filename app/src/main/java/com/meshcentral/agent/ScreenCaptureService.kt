@@ -511,7 +511,7 @@ class ScreenCaptureService : Service() {
     fun updateTunnelDisplaySize() {
         if (meshAgent == null) return;
         for (t in meshAgent!!.tunnels) {
-            if ((t.state == 2) && (t.usage == 2)) { // If this is a connected desktop tunnel...
+            if (t.isDesktopAuthorized) { // If this is a connected desktop tunnel...
                 t.updateDesktopDisplaySize() // Send updated screen size
             }
         }
@@ -522,7 +522,7 @@ class ScreenCaptureService : Service() {
         var desktopTunnelCloud = 0
         for (t in meshAgent!!.tunnels) {
             // If this is a connected desktop tunnel, count it
-            if ((t.state == 2) && (t.usage == 2)) { desktopTunnelCloud++ }
+            if (t.isDesktopAuthorized) { desktopTunnelCloud++ }
         }
         if (desktopTunnelCloud == 0) {
             // If there are no more desktop tunnels, stop projection
@@ -541,7 +541,7 @@ class ScreenCaptureService : Service() {
         var maxQueueSize : Long = 0
         for (t in meshAgent!!.tunnels) {
             // If this is a connected desktop tunnel, count it
-            if ((t.state == 2) && (t.usage == 2) && (t._webSocket != null)) {
+            if (t.isDesktopAuthorized && (t._webSocket != null)) {
                 var qs : Long? = t._webSocket?.queueSize()
                 if ((qs != null) && (qs > maxQueueSize)) { maxQueueSize = qs }
             }
@@ -554,8 +554,8 @@ class ScreenCaptureService : Service() {
         if (meshAgent == null) return;
         for (t in meshAgent!!.tunnels) {
             // If this is a connected desktop tunnel, send the data
-            if ((t.state == 2) && (t.usage == 2) && (t._webSocket != null)) {
-                t._webSocket!!.send(data)
+            if (t.isDesktopAuthorized && (t._webSocket != null)) {
+                t._webSocket?.send(data)
             }
         }
     }

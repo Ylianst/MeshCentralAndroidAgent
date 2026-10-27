@@ -109,13 +109,15 @@ class MainActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK) {
             startService(ScreenCaptureService.getStartIntent(this, result.resultCode, result.data))
-            meshAgent?.tunnels?.getOrNull(0)?.sendCtrlResponse(JSONObject().apply {
-                put("type", "console")
-                put("msg", null)
-                put("msgid", 0)
-            })
+            meshAgent?.tunnels?.toList()?.filter { it.isDesktopAuthorized }?.forEach { tunnel ->
+                tunnel.sendCtrlResponse(JSONObject().apply {
+                    put("type", "console")
+                    put("msg", null)
+                    put("msgid", 0)
+                })
+            }
         } else {
-            meshAgent?.tunnels?.getOrNull(0)?.let { tunnel ->
+            meshAgent?.tunnels?.toList()?.filter { it.isDesktopAuthorized }?.forEach { tunnel ->
                 tunnel.sendCtrlResponse(JSONObject().apply {
                     put("type", "console")
                     put("msg", "denied")
@@ -330,8 +332,7 @@ class MainActivity : AppCompatActivity() {
                 println("Approved: ${pad.url}, ${pad.where}, ${pad.args}")
                 pad.tunnel.deleteFileEx(pad)
             } else {
-                println("Denied: ${pad.url}, ${pad.where}, ${pad.args}")
-                pad.tunnel.deleteFileEx(pad)
+                pad.tunnel.fileDeleteResponse(pad.req, false)
             }
             pendingActivities.remove(pad)
         }

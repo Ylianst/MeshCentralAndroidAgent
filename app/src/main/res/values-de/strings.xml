@@ -40,4 +40,6 @@
     <string name="clear_server_setup">Server-Setup löschen?</string>
     <string name="server_pairing_link">Server-Kopplungslink</string>
     <string name="invalid_server_pairing_link">Ungültiger Server-Kopplungslink</string>
+    <string name="desktop_consent_message">%1$s fordert Zugriff auf den Desktop an. Zugriff erlauben?</string>
+    <string name="files_consent_message">%1$s fordert Zugriff auf die Dateien an. Zugriff erlauben?</string>
 </resources>
