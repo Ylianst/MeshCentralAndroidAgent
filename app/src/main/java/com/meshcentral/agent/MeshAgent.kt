@@ -1,9 +1,12 @@
 package com.meshcentral.agent
 
 import android.annotation.SuppressLint
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.*
 import android.hardware.camera2.CameraAccessException
@@ -27,7 +30,10 @@ import java.security.cert.CertificateFactory
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import java.security.interfaces.RSAPublicKey
-import java.util.concurrent.TimeUnit
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
@@ -46,9 +52,9 @@ class MeshUserInfo(userid: String, realname: String?, image: Bitmap?) {
 }
 
 @SuppressLint("CustomX509TrustManager", "InlinedApi")
-class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId: String) : WebSocketListener() {
+class MeshAgent(parent: AgentHost, host: String, certHash: String, devGroupId: String) : WebSocketListener() {
     @Volatile
-    var parent : MainActivity = parent
+    var parent : AgentHost = parent
         private set
     val host : String = host
     val serverCertHash: String = certHash
@@ -65,14 +71,16 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
     private var connectionTimer: CountDownTimer? = null
     private var lastBattState : JSONObject? = null
     private var lastNetInfo : String? = null
-    var tunnels : ArrayList<MeshTunnel> = ArrayList()
+    // Tunnels come and go on OkHttp threads while capture and UI code iterate; copy-on-write keeps
+    // every iteration safe without locking.
+    val tunnels : MutableList<MeshTunnel> = CopyOnWriteArrayList()
     var userinfo : HashMap<String, MeshUserInfo> = HashMap() // UserID -> MeshUserInfo
 
     init {
         //println("MeshAgent Constructor: ${host}, ${certHash}, $devGroupId")
     }
 
-    fun attachParent(parent: MainActivity) {
+    fun attachParent(parent: AgentHost) {
         this.parent = parent
     }
 
@@ -118,10 +126,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
         val sslSocketFactory = sslContext.socketFactory
 
-        return OkHttpClient.Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.MINUTES)
-            .writeTimeout(60, TimeUnit.MINUTES)
+        return MeshHttp.base.newBuilder()
             .hostnameVerifier(hostnameVerifier = HostnameVerifier { _, _ -> true })
             .sslSocketFactory(sslSocketFactory, trustAllCerts[0] as X509TrustManager)
             .build()
@@ -319,17 +324,13 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         sendNetworkUpdate(false)
         sendServerImageRequest()
 
-        if (g_autoConsent) {
-            parent.startProjection()
-        }
-
         // Send battery state
-        if (_webSocket != null) { _webSocket?.send(getSysBatteryInfo().toString().toByteArray().toByteString()) }
+        getSysBatteryInfo()?.let { _webSocket?.send(encodeAgentJson(it)) }
     }
 
     // Cause some data to be sent over the websocket control channel every 2 minutes to keep it open
     private fun startConnectionTimer() {
-        parent.runOnUiThread {
+        parent.runOnHostThread {
             connectionTimer = object: CountDownTimer(120000000, 120000) {
                 override fun onTick(millisUntilFinished: Long) {
                     if (sendNetworkUpdate(false) == false) { // See if we need to update network information
@@ -356,7 +357,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     val r = JSONObject()
                     r.put("action", "pong")
                     if (_webSocket != null) {
-                        _webSocket?.send(r.toString().toByteArray().toByteString())
+                        _webSocket?.send(encodeAgentJson(r))
                     }
                 }
                 "pong" -> {
@@ -383,32 +384,28 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                         r.put("data", t)
                         //println(r.toString())
                         if (_webSocket != null) {
-                            _webSocket?.send(r.toString().toByteArray().toByteString())
+                            _webSocket?.send(encodeAgentJson(r))
                         }
                     }
                 }
                 "netinfo" -> {
                     sendNetworkUpdate(true)
                 }
+                "software" -> {
+                    // The Software tab. Package lookups can be slow, so answer off the socket thread.
+                    thread(name = "MeshSoftware") { sendSoftwareInventory(json) }
+                }
                 "openUrl" -> {
-                    /*
-                    if (visibleScreen != 2) { // Device is busy in QR code scanner
-                        // Open the URL
-                        var xurl = json.optString("url")
-                        //println("Opening: $xurl")
-                        if ((xurl != null) && (parent.openUrl(xurl))) {
-                            // Event to the server
-                            var eventArgs = JSONArray()
-                            eventArgs.put(xurl)
-                            logServerEventEx(20, eventArgs, "Opening: ${xurl}", json);
+                    // The server's "open URL on device" feature; only web links are handed to Android,
+                    // so a server can't fire tel:, sms: or app-specific schemes at the device.
+                    val xurl = json.optString("url")
+                    if (xurl.startsWith("https://") || xurl.startsWith("http://")) {
+                        try {
+                            parent.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(xurl)))
+                            logServerEventEx(20, JSONArray().put(xurl), "Opening: $xurl", json)
+                        } catch (ex: Exception) {
+                            println("openUrl failed: $ex")
                         }
-                    }
-                    */
-
-                    var xurl = json.optString("url")
-                    if (xurl.isNotEmpty()) {
-                        var getintent: Intent = Intent(Intent.ACTION_VIEW, Uri.parse(xurl));
-                        parent.startActivity(getintent);
                     }
                 }
                 "msg" -> {
@@ -416,6 +413,12 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                     when (msgtype) {
                         "console" -> {
                             processConsoleMessage(json.getString("value"), json.getString("sessionid"), json)
+                        }
+                        "getclip" -> {
+                            parent.runOnHostThread { sendClipboard(json) }
+                        }
+                        "setclip" -> {
+                            parent.runOnHostThread { receiveClipboard(json) }
                         }
                         "tunnel" -> {
                             /*
@@ -533,6 +536,120 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         }
     }
 
+    private fun sendSoftwareInventory(json: JSONObject) {
+        val value: Any = when (json.optString("type")) {
+            "installedapps" -> try {
+                installedApps()
+            } catch (ex: Exception) {
+                JSONObject().put("error", ex.toString())
+            }
+            else -> JSONObject().put("success", false).put("error", "Not supported on Android")
+        }
+        val r = JSONObject()
+        r.put("action", "software")
+        r.put("value", value.toString())
+        r.put("sessionid", json.optString("sessionid"))
+        if (_webSocket != null) { _webSocket?.send(encodeAgentJson(r)) }
+    }
+
+    // Every app with a launcher entry, which the manifest queries for; that covers what a user
+    // would call installed apps without needing QUERY_ALL_PACKAGES and its Play declaration.
+    @Suppress("DEPRECATION")
+    private fun installedApps(): JSONArray {
+        val packageManager = parent.getApplicationContext().packageManager
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val packages = packageManager.queryIntentActivities(launcher, 0).map { it.activityInfo.packageName }.toSortedSet()
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+        val apps = ArrayList<JSONObject>()
+        for (pkg in packages) {
+            val info = try { packageManager.getPackageInfo(pkg, 0) } catch (ex: Exception) { continue }
+            val app = info.applicationInfo ?: continue
+            val entry = JSONObject()
+            entry.put("name", app.loadLabel(packageManager).toString())
+            entry.put("version", info.versionName ?: "")
+            entry.put("publisher", installerName(packageManager, pkg, app))
+            entry.put("date", dateFormat.format(Date(info.lastUpdateTime)))
+            entry.put("location", pkg)
+            apps.add(entry)
+        }
+        apps.sortBy { it.optString("name").lowercase() }
+        return JSONArray(apps)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun installerName(packageManager: PackageManager, pkg: String, app: ApplicationInfo): String {
+        val installer = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                packageManager.getInstallSourceInfo(pkg).installingPackageName
+            } else {
+                packageManager.getInstallerPackageName(pkg)
+            }
+        } catch (ex: Exception) {
+            null
+        }
+        return when {
+            installer == "com.android.vending" -> "Google Play"
+            installer != null -> installer
+            (app.flags and ApplicationInfo.FLAG_SYSTEM) != 0 -> "System"
+            else -> "Sideloaded"
+        }
+    }
+
+    // Android 10+ only hands the clipboard to the focused app or the keyboard, so reading usually
+    // works only while the agent's own screen is open. Polls (tag 3) stay silent; a manual request
+    // gets told why nothing came back.
+    private fun sendClipboard(json: JSONObject) {
+        val tag = json.opt("tag")
+        val text = readClipboardText()
+        if (text == null) {
+            if (tag != 3) AgentController.sendDesktopMessage("Android only lets the agent read the clipboard while the MeshCentral Agent app is open on the device.")
+            return
+        }
+        if (tag != 3) logServerEventEx(21, JSONArray().put(text.length), "Getting clipboard content, ${text.length} byte(s)", json)
+        val r = JSONObject()
+        r.put("action", "msg")
+        r.put("type", "getclip")
+        r.put("sessionid", json.optString("sessionid"))
+        r.put("data", text)
+        if (tag != null) r.put("tag", tag)
+        if (_webSocket != null) { _webSocket?.send(encodeAgentJson(r)) }
+    }
+
+    private fun receiveClipboard(json: JSONObject) {
+        val text = if (json.isNull("data")) null else json.optString("data")
+        val ok = (text != null) && writeClipboardText(text)
+        if (ok) logServerEventEx(22, JSONArray().put(text!!.length), "Setting clipboard content, ${text.length} byte(s)", json)
+        val r = JSONObject()
+        r.put("action", "msg")
+        r.put("type", "setclip")
+        r.put("sessionid", json.optString("sessionid"))
+        r.put("success", ok)
+        if (_webSocket != null) { _webSocket?.send(encodeAgentJson(r)) }
+    }
+
+    private fun readClipboardText(): String? {
+        val context = parent.getApplicationContext()
+        val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return null
+        return try {
+            val clip = manager.primaryClip ?: return null
+            if (clip.itemCount == 0) return null
+            clip.getItemAt(0).coerceToText(context)?.toString()
+        } catch (ex: Exception) {
+            null
+        }
+    }
+
+    private fun writeClipboardText(text: String): Boolean {
+        val context = parent.getApplicationContext()
+        val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+        return try {
+            manager.setPrimaryClip(ClipData.newPlainText("MeshCentral", text))
+            true
+        } catch (ex: Exception) {
+            false
+        }
+    }
+
     // Send the latest core information to the server
     fun sendCoreInfo() {
         val r = JSONObject()
@@ -540,7 +657,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         r.put("value", "Android Agent v${BuildConfig.VERSION_NAME}")
         r.put("caps", 13) // Capability bitmask: 1 = Desktop, 2 = Terminal, 4 = Files, 8 = Console, 16 = JavaScript, 32 = Temporary Agent, 64 = Recovery Agent
         if (pushMessagingToken != null) { r.put("pmt", pushMessagingToken) }
-        if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
+        if (_webSocket != null) { _webSocket?.send(encodeAgentJson(r)) }
     }
 
     // Send 2FA authentication URL and approval/reject back
@@ -549,7 +666,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         r.put("action", "2faauth")
         r.put("url", url.toString())
         r.put("approved", approved)
-        if (_webSocket != null) { _webSocket?.send(r.toString().toByteArray().toByteString()) }
+        if (_webSocket != null) { _webSocket?.send(encodeAgentJson(r)) }
     }
 
     // Request user image and real name if needed
@@ -563,7 +680,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             r.put("action", "getUserImage")
             r.put("userid", userid)
             if (_webSocket != null) {
-                _webSocket?.send(r.toString().toByteArray().toByteString())
+                _webSocket?.send(encodeAgentJson(r))
             }
         }
     }
@@ -574,13 +691,23 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         r.put("action", "getServerImage")
         r.put("agent", "android")
         if (_webSocket != null) {
-            _webSocket?.send(r.toString().toByteArray().toByteString())
+            _webSocket?.send(encodeAgentJson(r))
         }
     }
 
     fun removeTunnel(tunnel: MeshTunnel) {
         tunnels.remove(tunnel)
         parent.refreshInfo()
+    }
+
+    // Downloads run on a server-opened tunnel that has no way to report errors, so tell the
+    // operator on their files session instead.
+    fun sendFilesMessage(message: String, userid: String?) {
+        for (t in tunnels) {
+            if ((t.state == 2) && (t.usage == 5) && (userid.isNullOrEmpty() || t.userid == userid)) {
+                t.sendConsoleMessage(message, timeoutSeconds = 20)
+            }
+        }
     }
 
     fun sendNetworkUpdate(force: Boolean) : Boolean {
@@ -595,7 +722,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         val r = JSONObject()
         r.put("action", "netinfo")
         r.put("netif2", netinfo)
-        if (_webSocket != null) {_webSocket?.send(r.toString().toByteArray().toByteString()); return true }
+        if (_webSocket != null) {_webSocket?.send(encodeAgentJson(r)); return true }
         return false
     }
 
@@ -679,14 +806,14 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
             // Battery state changed, send update to the server
             lastBattState = battState
-            if (_webSocket != null) { _webSocket?.send(battState.toString().toByteArray().toByteString()) }
+            if (_webSocket != null) { _webSocket?.send(encodeAgentJson(battState)) }
         }
     }
 
     private fun getSysBatteryInfo() : JSONObject? {
         try {
             val batteryStatus: Intent? = IntentFilter(Intent.ACTION_BATTERY_CHANGED).let { ifilter ->
-                parent.applicationContext.registerReceiver(null, ifilter)
+                parent.getApplicationContext().registerReceiver(null, ifilter)
             }
             val status: Int = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
             val isCharging: Boolean = status == BatteryManager.BATTERY_STATUS_CHARGING
@@ -897,7 +1024,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             }
             "kvmstart" -> {
                 // Start remote desktop
-                if (g_ScreenCaptureService == null) {
+                if (!AgentController.isRemoteDesktopRunning()) {
                     parent.startProjection()
                     r = "ok"
                 } else {
@@ -906,7 +1033,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
             }
             "kvmstop" -> {
                 // Stop remote desktop
-                if (g_ScreenCaptureService != null) {
+                if (AgentController.isRemoteDesktopRunning()) {
                     parent.stopProjection()
                     r = "ok"
                 } else {
@@ -1001,7 +1128,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
         json.put("type", "console")
         json.put("value", r)
         if (sessionid != null) { json.put("sessionid", sessionid) }
-        if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+        if (_webSocket != null) { _webSocket?.send(encodeAgentJson(json)) }
     }
 
     fun hexToByteArray(hex: String) : ByteArray {
@@ -1029,7 +1156,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 if (!soptions.isNull("sessionid")) { json.put("sessionid", soptions.optString("sessionid")) }
             }
         }
-        if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+        if (_webSocket != null) { _webSocket?.send(encodeAgentJson(json)) }
     }
 
     fun logServerEventEx(id: Int, args: JSONArray?, msg: String, jsoncmd: JSONObject?) {
@@ -1049,7 +1176,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
                 if (!soptions.isNull("sessionid")) { json.put("sessionid", soptions.optString("sessionid")) }
             }
         }
-        if (_webSocket != null) { _webSocket?.send(json.toString().toByteArray().toByteString()) }
+        if (_webSocket != null) { _webSocket?.send(encodeAgentJson(json)) }
     }
 
 }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape>
+            <solid android:color="@color/ic_launcher_background" />
+            <size android:width="160dp" android:height="90dp" />
+        </shape>
+    </item>
+    <item android:width="48dp" android:height="48dp" android:top="9dp"
+        android:gravity="top|center_horizontal" android:drawable="@mipmap/ic_launcher" />
+    <item android:drawable="@drawable/tv_banner_title" />
+</layer-list>

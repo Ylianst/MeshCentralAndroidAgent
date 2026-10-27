@@ -10,15 +10,24 @@ link, or entering the link manually. After enrollment, the app maintains an
 authenticated connection to the server and can:
 
 - Report device, network, storage, and battery information.
-- Share the device screen after Android MediaProjection consent.
+- Share the device screen, and control it once the bundled accessibility
+  service is enabled.
 - Browse and transfer media and files available to the app.
 - Receive server notifications and a limited set of console commands.
 - Approve or reject MeshCentral push-based two-factor authentication requests.
 
-Remote desktop is currently **view only**. The app can stream the display, but
-it cannot tap, swipe, type, or otherwise control the device. Android displays a
-foreground notification while screen sharing is active, and the user can deny
-or stop capture at any time.
+Remote desktop uses Android's screen-capture consent dialog, or accessibility
+screenshots on Android 11 and later. Enabling the bundled Accessibility Remote
+Control service adds taps, drags, long presses, scrolling, typing and D-pad
+navigation. On older Android versions, accessibility input works alongside
+MediaProjection capture, which still needs local approval. Android shows a
+persistent notification while a session is active, consent prompts follow the server's
+policy and the app's Automatic Consent setting, and the user can deny or stop
+sharing at any time.
+
+The app also has an Android TV launcher entry. See the [TV controls and
+limitations](docs/remote-desktop.md#tv-controls) before testing on Fire TV or
+other Android TV devices.
 
 ## Install
 
@@ -53,6 +62,7 @@ releases require a dedicated signing keystore; see the release guide below.
 	capabilities, and links to all project resources.
 - [Repository overview](docs/overview.md) - architecture, components, project
 	configuration, and development notes.
+- [Testing](docs/testing.md) - portable checks, reports, and coverage limits.
 - [Remote desktop](docs/remote-desktop.md) - screen-capture flow, consent,
 	encoding, and Android platform limitations.
 - [Tunnel authentication](docs/tunnel-authentication.md) - control-channel
