@@ -22,6 +22,26 @@ class ProtocolValidationTest {
     }
 
     @Test
+    fun acceptsServerLinkWithAgentKey() {
+        assertTrue(isMeshServerLinkValid("mc://mesh.example.com,certificateHash,deviceGroup,abc123"))
+        assertEquals("abc123", getMeshServerLinkAgentKey("mc://mesh.example.com,certificateHash,deviceGroup,abc123"))
+        assertNull(getMeshServerLinkAgentKey("mc://mesh.example.com,certificateHash,deviceGroup"))
+    }
+
+    @Test
+    fun rejectsInvalidAgentKey() {
+        assertFalse(isMeshServerLinkValid("mc://mesh.example.com,certificateHash,deviceGroup,"))
+        assertFalse(isMeshServerLinkValid("mc://mesh.example.com,certificateHash,deviceGroup,a&b=c"))
+        assertNull(getMeshServerLinkAgentKey("mc://mesh.example.com,certificateHash,deviceGroup,a b"))
+    }
+
+    @Test
+    fun buildsAgentConnectionUrl() {
+        assertEquals("wss://mesh.example.com/agent.ashx", getAgentConnectionUrl("mesh.example.com", null))
+        assertEquals("wss://mesh.example.com:4443/dom/agent.ashx?key=abc123", getAgentConnectionUrl("mesh.example.com:4443/dom", "abc123"))
+    }
+
+    @Test
     fun acceptsAbsentOrMatchingTunnelUsage() {
         assertTrue(isTunnelUsageAllowed(null, 2))
         assertTrue(isTunnelUsageAllowed(5, 5))

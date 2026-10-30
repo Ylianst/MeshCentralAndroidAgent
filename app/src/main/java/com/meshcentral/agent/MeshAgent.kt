@@ -46,13 +46,14 @@ class MeshUserInfo(userid: String, realname: String?, image: Bitmap?) {
 }
 
 @SuppressLint("CustomX509TrustManager", "InlinedApi")
-class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId: String) : WebSocketListener() {
+class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId: String, agentKey: String? = null) : WebSocketListener() {
     @Volatile
     var parent : MainActivity = parent
         private set
     val host : String = host
     val serverCertHash: String = certHash
     val devGroupId: String = devGroupId
+    val agentKey: String? = agentKey
     var state : Int = 0 // 0 = Disconnected, 1 = Connecting, 2 = Authenticating, 3 = Connected
     var nonce : ByteArray? = null
     var serverNonce: ByteArray? = null
@@ -130,7 +131,7 @@ class MeshAgent(parent: MainActivity, host: String, certHash: String, devGroupId
 
     fun startSocket() {
         _webSocket = getUnsafeOkHttpClient().newWebSocket(
-                Request.Builder().url("wss://$host/agent.ashx").build(),
+                Request.Builder().url(getAgentConnectionUrl(host, agentKey)).build(),
                 this
         )
         //socketOkHttpClient.dispatcher.executorService.shutdown()

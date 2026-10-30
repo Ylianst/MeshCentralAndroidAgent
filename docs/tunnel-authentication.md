@@ -30,7 +30,7 @@ Before any connection, the device is paired with a server using an `mc://`
 pairing link (scanned by QR code, opened as a deep link, or typed manually):
 
 ```
-mc://<server-host>,<server-identity-hash>,<device-group-id>
+mc://<server-host>,<server-identity-hash>,<device-group-id>[,<agent-key>]
 ```
 
 - `<server-host>` is the host the agent connects to.
@@ -38,6 +38,10 @@ mc://<server-host>,<server-identity-hash>,<device-group-id>
   certificate public key. The agent stores it as `serverCertHash` and uses it to
   verify the server during the handshake.
 - `<device-group-id>` is the mesh/device group the device enrolls into.
+- `<agent-key>` is optional. If the server domain sets `agentKey`, the server
+  only accepts agent connections to `agent.ashx?key=<agent-key>` and silently
+  holds all others. Append the key as a fourth field when the server uses one.
+  It must be alphanumeric, like the server requires.
 
 Before connecting, the app loads its identity from Android Keystore under the
 `meshcentral-agent-identity` alias. New installations generate a 2048-bit RSA
